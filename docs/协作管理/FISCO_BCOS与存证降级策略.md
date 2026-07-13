@@ -100,7 +100,7 @@ getEvidence(certificateNo)
 
 1. FISCO 节点启动失败超过半天。
 2. 合约部署失败且无法快速定位。
-3. Java SDK 或依赖版本冲突影响后端启动。
+3. FISCO SDK、Web3.py、命令行工具或依赖版本冲突影响 FastAPI 后端启动。
 4. 链上交易不稳定，导致验真流程无法演示。
 5. 前后端主流程尚未跑通。
 
@@ -114,3 +114,4 @@ getEvidence(certificateNo)
 2. 证书当前有效性必须结合 `certificates.status` 和撤销记录判断。
 3. 旧回执只能证明曾经存证，不能证明证书现在仍有效。
 4. FISCO 是增强项，不应影响 P0 演示闭环。
+
