@@ -1,0 +1,67 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+secrets/
+
+# Logs / temp
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# Java / Spring Boot
+/target/
+*.class
+*.jar
+*.war
+*.ear
+.gradle/
+build/
+
+# Node / Vue
+node_modules/
+dist/
+coverage/
+.npm/
+.pnpm-store/
+
+# Python helpers
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local generated outputs
+outputs/
+work/
+uploads/
+generated/
+certificates/
+qrcodes/
+
+# Database / local runtime
+*.db
+*.sqlite
+*.sqlite3
+*.h2.db
+*.mv.db
+
+# Office temp files
+~$*.docx
+~$*.xlsx
+~$*.pptx
