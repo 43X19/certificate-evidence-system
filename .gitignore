@@ -45,6 +45,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+pytest-cache-files-*/
 
 # Local generated outputs
 outputs/
