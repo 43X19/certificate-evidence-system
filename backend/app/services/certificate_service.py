@@ -250,9 +250,13 @@ def generate_certificate(
             db.commit()
             db.refresh(certificate)
 
-            # 落库成功、编号确定不会再跟别人冲突之后，才把临时文件改名成正式文件名
-            temp_pdf_path.rename(final_pdf_path)
-            temp_qr_path.rename(final_qr_path)
+            # 落库成功、编号确定不会再跟别人冲突之后，才把临时文件改名成正式文件名。
+            # 这里用 replace 而不是 rename：测试或演示环境经常会清空数据库但保留
+            # outputs/certificates 目录，导致同一个 certificate_no 的旧文件仍在磁盘上。
+            # 数据库唯一约束已经保证当前编号归这次成功生成所有，因此可以安全覆盖这种
+            # 没有数据库记录引用的陈旧产物。
+            temp_pdf_path.replace(final_pdf_path)
+            temp_qr_path.replace(final_qr_path)
 
             return certificate
         except IntegrityError as exc:
