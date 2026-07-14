@@ -5,7 +5,25 @@ import { snakeize } from './helpers'
 
 export async function getTemplates(query: PageQuery): Promise<PageResult<Template>> {
   if (useMock) { await wait(); return pageOf(templates, query) }
-  return await request.get('/admin/templates', { params: snakeize(query) })
+  const result = await request.get('/admin/templates', { params: snakeize(query) }) as PageResult<Record<string, unknown>>
+  return { ...result, records: result.records.map(fromContract) }
+}
+
+function fromContract(data: Record<string, unknown>): Template {
+  const config = (data.content_config || {}) as Record<string, unknown>
+  return {
+    template_id: Number(data.template_id),
+    name: String(data.template_name || ''),
+    issuer: String(data.institution_name || ''),
+    course_name: String(config.course_name || ''),
+    project_name: String(config.project_name || ''),
+    certificate_title: String(config.certificate_title || ''),
+    content: String(config.content || ''),
+    issue_year: String(config.issue_year || ''),
+    fields: Array.isArray(config.fields) ? config.fields.map(String) : [],
+    enabled: data.status !== 'DISABLED',
+    updated_at: String(data.updated_at || '')
+  }
 }
 
 function toContract(data: Partial<Template>) {
