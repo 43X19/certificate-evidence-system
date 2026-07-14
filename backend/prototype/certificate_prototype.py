@@ -27,8 +27,8 @@ import qrcode
 # ---------------------------------------------------------------------------
 # 基础配置
 # ---------------------------------------------------------------------------
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "outputs", "samples")
-OUTPUT_DIR = os.path.abspath(OUTPUT_DIR)
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, "outputs", "samples")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # reportlab 内置中文字体，不需要额外提供 ttf 字体文件，避免中文乱码
@@ -186,24 +186,24 @@ def generate_receipt(certificate_no: str, certificate_hash: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 主流程：串联 1-6 步，输出样例 JSON
+# 单张证书生成的完整流程（编号由调用方生成），main() 和批量生成脚本
+# （certificate_batch.py）共用同一份逻辑，避免两边各写一遍容易走样。
 # ---------------------------------------------------------------------------
-def main():
-    certificate_no = generate_certificate_no(batch_date, seq=1)
-
+def generate_certificate_record(certificate_no: str, student: dict, template: dict,
+                                 issue_date: datetime, output_dir: str) -> dict:
     # 顺序很重要：先出二维码，再把二维码画进PDF，最后对成品PDF算哈希
-    qr_code_path, verify_url = generate_qrcode(certificate_no, OUTPUT_DIR)
-    pdf_path = generate_pdf(certificate_no, student, template, batch_date, qr_code_path, OUTPUT_DIR)
+    qr_code_path, verify_url = generate_qrcode(certificate_no, output_dir)
+    pdf_path = generate_pdf(certificate_no, student, template, issue_date, qr_code_path, output_dir)
     certificate_hash = compute_sha256(pdf_path)
     receipt = generate_receipt(certificate_no, certificate_hash)
 
     # 字段命名对齐 docs/协作管理/接口规范.md 的字段字典，方便 3 号/4 号直接对接
-    sample_output = {
+    return {
         "certificate_no": certificate_no,
         "student_id": student["student_id"],
         "student_name": student["student_name"],
-        "pdf_path": os.path.relpath(pdf_path, start=os.path.join(os.path.dirname(__file__), "..", "..")),
-        "qr_code_path": os.path.relpath(qr_code_path, start=os.path.join(os.path.dirname(__file__), "..", "..")),
+        "pdf_path": os.path.relpath(pdf_path, start=PROJECT_ROOT),
+        "qr_code_path": os.path.relpath(qr_code_path, start=PROJECT_ROOT),
         "verify_url": verify_url,
         "certificate_hash": certificate_hash,
         "receipt_id": receipt["receipt_id"],
@@ -212,13 +212,21 @@ def main():
         "chain_receipt": receipt,
     }
 
+
+# ---------------------------------------------------------------------------
+# 主流程：串联 1-6 步，输出样例 JSON（单张示例，学号1001张三）
+# ---------------------------------------------------------------------------
+def main():
+    certificate_no = generate_certificate_no(batch_date, seq=1)
+    sample_output = generate_certificate_record(certificate_no, student, template, batch_date, OUTPUT_DIR)
+
     json_path = os.path.join(OUTPUT_DIR, f"{certificate_no}.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(sample_output, f, ensure_ascii=False, indent=2)
 
     print("生成完成，产物路径：")
-    print(f"  PDF     : {pdf_path}")
-    print(f"  二维码  : {qr_code_path}")
+    print(f"  PDF     : {os.path.join(PROJECT_ROOT, sample_output['pdf_path'])}")
+    print(f"  二维码  : {os.path.join(PROJECT_ROOT, sample_output['qr_code_path'])}")
     print(f"  样例JSON: {json_path}")
     print()
     print("样例JSON内容：")
