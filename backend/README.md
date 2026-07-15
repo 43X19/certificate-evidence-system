@@ -36,9 +36,9 @@
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-二维码默认指向本机公共验真接口。若需要用手机在同一局域网扫码，可仅在本机 `.env`
-设置 `PUBLIC_VERIFY_BASE_URL=http://<局域网IP>:8000/api/verification`，重启 FastAPI 后
-重新生成演示证书；不要把局域网地址或 `.env` 提交到仓库。
+二维码默认指向前端公共验真页 `http://127.0.0.1:5173/public/verify`。若需要用手机在同一局域网扫码，可仅在本机 `.env`
+设置 `PUBLIC_VERIFY_BASE_URL=http://<局域网IP>:5173/public/verify`，以前端 `--host 0.0.0.0` 方式启动并重启 FastAPI 后
+重新生成演示证书；不要把局域网地址或 `.env` 提交到仓库。已经生成的旧二维码不会自动改写，需要重新生成证书后才能进入新验真页面。
 
 Swagger 接口文档地址：
 
@@ -54,7 +54,7 @@ http://127.0.0.1:8000/docs
 .\.venv\Scripts\python.exe -m scripts.create_tables
 ```
 
-如果本机以前已经创建过旧表，需要补齐业务表新增字段和 Merkle 表，可执行：
+如果本机以前已经创建过旧表，需要补齐业务表新增字段（包括 `students.college`）和 Merkle 表，可执行：
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.upgrade_certificate_schema
@@ -80,6 +80,10 @@ http://127.0.0.1:8000/docs
 - `GET /api/health/db`
 - `GET /api/students`
 - `GET /api/certificates`
+- `GET /api/student/certificates`
+- `GET /api/student/certificates/{certificate_no}`
+- `GET /api/student/certificates/{certificate_no}/download`
+- `GET /api/student/certificates/{certificate_no}/qrcode`
 - `GET /api/verification/{certificate_no}`
 - `POST /api/verification/{certificate_no}/file`
 - `POST /api/auth/login`
@@ -119,7 +123,7 @@ http://127.0.0.1:8000/docs
 当前测试结果：
 
 ```text
-55 passed
+64 passed
 ```
 
 ## 前后端关键字段
