@@ -51,3 +51,13 @@ class GenerateResult(BaseModel):
     generated_count: int
     failed_count: int
     failures: list[GenerateFailure] = []
+
+
+# 批次算Merkle Root的返回值，字段对应数据库设计.md第9.1/9.2节
+class MerkleRootResult(BaseModel):
+    batch_id: int
+    root_no: str
+    merkle_root: str
+    previous_root_hash: str | None = None
+    current_root_hash: str
+    leaf_count: int
