@@ -10,6 +10,7 @@ student_ids，存在这张表的student_ids字段里；触发生成（POST /admi
 不需要再传一遍名单，直接用创建批次时存下来的这份。
 """
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -79,7 +80,9 @@ def create_batch_record(
 
 
 def _to_batch_detail(db: Session, batch: CertificateBatch) -> BatchDetail:
-    cert_query = db.query(Certificate).filter(Certificate.batch_id == str(batch.batch_id))
+    # certificates.batch_id 现在是真正的整数外键了（之前是字符串，2号/4号那边的
+    # 合并已经把模型改过来了），这里跟着改成用int比较，不再用str()包一层。
+    cert_query = db.query(Certificate).filter(Certificate.batch_id == batch.batch_id)
     generated = cert_query.count()
     evidenced = cert_query.filter(Certificate.receipt_id.isnot(None)).count()
 
@@ -108,10 +111,44 @@ def create_batch(payload: BatchCreate, db: Session = Depends(get_db)) -> ApiResp
     return ApiResponse.success(_to_batch_detail(db, batch))
 
 
-@router.get("", response_model=ApiResponse[list[BatchDetail]])
-def list_batches(db: Session = Depends(get_db)) -> ApiResponse[list[BatchDetail]]:
+@router.get("", response_model=ApiResponse[dict[str, Any]])
+def list_batches(
+    current: int = 1,
+    size: int = 10,
+    keyword: str | None = None,
+    status: str | None = None,
+    db: Session = Depends(get_db),
+) -> ApiResponse[dict[str, Any]]:
+    """
+    前端frontend/src/types/index.ts里getBatches()要的是分页格式PageResult
+    （{records,total,current,size}），不是纯列表——之前这里直接返回列表，
+    格式跟前端期望的不一致，这是我们自己的bug，这次一并修掉。current/size/
+    keyword/status这几个查询参数命名跟4号在admin.py里写的_page()保持一致，
+    方便以后有需要的话统一。
+    """
+    current = max(current, 1)
+    size = max(size, 1)
+
     batches = db.query(CertificateBatch).order_by(CertificateBatch.created_at.desc()).all()
-    return ApiResponse.success([_to_batch_detail(db, batch) for batch in batches])
+    details = [_to_batch_detail(db, batch) for batch in batches]
+
+    if keyword:
+        keyword_lower = keyword.lower()
+        details = [d for d in details if keyword_lower in d.batch_name.lower() or keyword_lower in d.batch_no.lower()]
+    if status:
+        details = [d for d in details if d.status == status]
+
+    start = (current - 1) * size
+    page_records = details[start:start + size]
+
+    return ApiResponse.success(
+        {
+            "records": [record.model_dump() for record in page_records],
+            "total": len(details),
+            "current": current,
+            "size": size,
+        }
+    )
 
 
 def _load_template_dict(db: Session, template_id: int | None) -> dict:
@@ -158,7 +195,7 @@ def generate_batch(batch_id: int, db: Session = Depends(get_db)) -> ApiResponse[
                 student_id=student_id,
                 template=template,
                 issue_date=issue_date,
-                batch_id=str(batch_id),
+                batch_id=batch_id,
             )
             generated_count += 1
         except (ValueError, RuntimeError) as exc:
