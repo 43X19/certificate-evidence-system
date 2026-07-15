@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -14,6 +14,14 @@ class MerkleTreeNode(Base):
     """
 
     __tablename__ = "merkle_tree_nodes"
+    __table_args__ = (
+        UniqueConstraint(
+            "root_id",
+            "level",
+            "position_in_level",
+            name="uq_merkle_tree_nodes_position",
+        ),
+    )
 
     node_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     root_id: Mapped[int] = mapped_column(ForeignKey("credential_roots.root_id"))

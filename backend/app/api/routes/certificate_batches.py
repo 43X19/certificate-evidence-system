@@ -9,11 +9,13 @@
 student_ids，存在这张表的student_ids字段里；触发生成（POST /admin/batches/{id}/generate）
 不需要再传一遍名单，直接用创建批次时存下来的这份。
 """
+import logging
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.responses import ApiResponse
@@ -35,6 +37,7 @@ from app.schemas.batch import (
 from app.services import certificate_service, merkle_service
 
 router = APIRouter(prefix="/admin/batches")
+logger = logging.getLogger(__name__)
 
 
 # 模板管理功能还没做出来之前，生成证书用的模板内容暂时用这个默认值兜底
@@ -359,25 +362,38 @@ def compute_merkle_root(batch_id: int, db: Session = Depends(get_db)) -> ApiResp
     """
     try:
         root_record = merkle_service.compute_batch_root(db, batch_id)
+    except merkle_service.MerkleBatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except merkle_service.MerkleRootAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except merkle_service.MerkleRootConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    db.add(
-        AuditLog(
-            action="批次Merkle Root生成",
-            target_type="证书管理",
-            target_id=root_record.root_no,
-            operator="admin",
-            detail=f"批次batch_id={batch_id}生成Root，包含{root_record.leaf_count}张证书",
+    try:
+        db.add(
+            AuditLog(
+                action="批次Merkle Root生成",
+                target_type="证书管理",
+                target_id=root_record.root_no,
+                operator="admin",
+                detail=f"批次batch_id={batch_id}生成Root，包含{root_record.leaf_count}张证书",
+            )
         )
-    )
-    db.commit()
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("failed to write Merkle Root audit log")
 
     return ApiResponse.success(
         MerkleRootResult(
             batch_id=batch_id,
+            root_id=root_record.root_no,
             root_no=root_record.root_no,
             merkle_root=root_record.merkle_root,
+            leaf_order_rule=root_record.leaf_order_rule,
+            odd_leaf_rule=root_record.odd_leaf_rule,
             previous_root_hash=root_record.previous_root_hash,
             current_root_hash=root_record.current_root_hash,
             leaf_count=root_record.leaf_count,

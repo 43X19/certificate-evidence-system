@@ -30,11 +30,17 @@ class MerkleProofStep(BaseModel):
 
 class MerkleProofResult(BaseModel):
     certificate_no: str
-    certificate_hash: str | None = None
+    certificate_hash: str
+    leaf_index: int
+    leaf_order_rule: str
+    odd_leaf_rule: str
+    root_id: str
     root_no: str
     merkle_root: str
+    merkle_proof: list[MerkleProofStep]
     proof: list[MerkleProofStep]
     # 拿proof + certificate_hash逐层重算，跟merkle_root比对的结果——只代表
     # "内容完整性"（有没有被篡改），不代表证书当前是否有效，两者按9.4节要求
     # 分开展示，不能混为一谈。
+    proof_valid: bool
     verified: bool

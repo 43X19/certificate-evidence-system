@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -19,6 +19,9 @@ class CredentialRoot(Base):
     """
 
     __tablename__ = "credential_roots"
+    __table_args__ = (
+        UniqueConstraint("batch_id", name="uq_credential_roots_batch_id"),
+    )
 
     root_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     root_no: Mapped[str] = mapped_column(String(64), unique=True, index=True)
@@ -26,6 +29,10 @@ class CredentialRoot(Base):
     merkle_root: Mapped[str] = mapped_column(String(64))
     previous_root_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     current_root_hash: Mapped[str] = mapped_column(String(64))
+    leaf_order_rule: Mapped[str] = mapped_column(
+        String(32),
+        default="CERTIFICATE_NO_ASC",
+    )
     # 固定值 DUPLICATE_LAST（9.1节奇数叶处理规则），先存成字段，为以后可能出现
     # 别的规则留口子，目前只有这一种取值。
     odd_leaf_rule: Mapped[str] = mapped_column(String(32), default="DUPLICATE_LAST")

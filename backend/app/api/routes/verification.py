@@ -12,6 +12,7 @@ from app.services import merkle_service, verification_service
 
 
 router = APIRouter(prefix="/verification")
+public_router = APIRouter(prefix="/public/verify")
 logger = logging.getLogger(__name__)
 
 
@@ -63,6 +64,7 @@ async def verify_certificate_by_file(
 
 
 @router.get("/{certificate_no}/merkle-proof", response_model=ApiResponse[MerkleProofResult])
+@public_router.get("/{certificate_no}/merkle-proof", response_model=ApiResponse[MerkleProofResult])
 def get_merkle_proof(
     certificate_no: str,
     db: Session = Depends(get_db),
@@ -85,4 +87,10 @@ def get_merkle_proof(
     verified = merkle_service.verify_merkle_proof(
         proof_data["certificate_hash"], proof_data["proof"], proof_data["merkle_root"]
     )
-    return ApiResponse.success(MerkleProofResult(**proof_data, verified=verified))
+    return ApiResponse.success(
+        MerkleProofResult(
+            **proof_data,
+            proof_valid=verified,
+            verified=verified,
+        )
+    )

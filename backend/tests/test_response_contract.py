@@ -56,3 +56,34 @@ def test_openapi_describes_batch_evidence_response_fields() -> None:
         "evidenced",
         "newly_evidenced",
     }
+
+
+def test_openapi_describes_merkle_contract_and_public_route() -> None:
+    openapi = app.openapi()
+    schemas = openapi["components"]["schemas"]
+
+    assert {
+        "batch_id",
+        "root_id",
+        "root_no",
+        "merkle_root",
+        "leaf_order_rule",
+        "odd_leaf_rule",
+        "current_root_hash",
+        "leaf_count",
+    } <= set(schemas["MerkleRootResult"]["required"])
+    assert {
+        "certificate_no",
+        "certificate_hash",
+        "leaf_index",
+        "leaf_order_rule",
+        "odd_leaf_rule",
+        "root_id",
+        "root_no",
+        "merkle_root",
+        "merkle_proof",
+        "proof",
+        "proof_valid",
+        "verified",
+    } <= set(schemas["MerkleProofResult"]["required"])
+    assert "/api/public/verify/{certificate_no}/merkle-proof" in openapi["paths"]

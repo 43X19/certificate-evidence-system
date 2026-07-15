@@ -111,6 +111,23 @@ def test_compute_batch_root_writes_nodes_and_updates_certificates(db_session) ->
         assert certificate.root_id == root_record.root_no
 
 
+def test_compute_batch_root_rejects_duplicate_batch(db_session) -> None:
+    from app.models.certificate_batch import CertificateBatch
+
+    batch = CertificateBatch(batch_no="BATCH-DUP", batch_name="重复Root批次", status="DRAFT")
+    db_session.add(batch)
+    db_session.commit()
+
+    certificates = _make_batch_certificates(db_session, 2, offset=8)
+    for certificate in certificates:
+        certificate.batch_id = batch.batch_id
+    db_session.commit()
+
+    merkle_service.compute_batch_root(db_session, batch.batch_id)
+    with pytest.raises(merkle_service.MerkleRootAlreadyExistsError):
+        merkle_service.compute_batch_root(db_session, batch.batch_id)
+
+
 def test_second_batch_root_chains_to_first(db_session) -> None:
     from app.models.certificate_batch import CertificateBatch
 
@@ -244,18 +261,31 @@ def test_merkle_root_route_end_to_end(db_session) -> None:
     root_data = root_resp.json()["data"]
     assert root_data["batch_id"] == batch_id
     assert root_data["leaf_count"] == 2
+    assert root_data["root_id"] == root_data["root_no"]
+    assert root_data["leaf_order_rule"] == "CERTIFICATE_NO_ASC"
+    assert root_data["odd_leaf_rule"] == "DUPLICATE_LAST"
+
+    duplicate_resp = asyncio.run(_post_json(f"/api/admin/batches/{batch_id}/merkle-root"))
+    assert duplicate_resp.status_code == 409
 
     certificate = db_session.query(Certificate).filter(Certificate.batch_id == batch_id).first()
-    proof_resp = asyncio.run(_get_json(f"/api/verification/{certificate.certificate_no}/merkle-proof"))
-    assert proof_resp.status_code == 200
-    proof_data = proof_resp.json()["data"]
-    assert proof_data["verified"] is True
-    assert proof_data["merkle_root"] == root_data["merkle_root"]
+    for path in (
+        f"/api/verification/{certificate.certificate_no}/merkle-proof",
+        f"/api/public/verify/{certificate.certificate_no}/merkle-proof",
+    ):
+        proof_resp = asyncio.run(_get_json(path))
+        assert proof_resp.status_code == 200
+        proof_data = proof_resp.json()["data"]
+        assert proof_data["verified"] is True
+        assert proof_data["proof_valid"] is True
+        assert proof_data["merkle_root"] == root_data["merkle_root"]
+        assert proof_data["root_id"] == root_data["root_id"]
+        assert proof_data["merkle_proof"] == proof_data["proof"]
 
 
 def test_merkle_root_route_404_for_unknown_batch(db_session) -> None:
     resp = asyncio.run(_post_json("/api/admin/batches/999999/merkle-root"))
-    assert resp.status_code == 400
+    assert resp.status_code == 404
 
 
 def test_merkle_proof_route_404_before_root_computed(db_session) -> None:

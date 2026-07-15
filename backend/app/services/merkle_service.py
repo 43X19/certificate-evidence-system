@@ -16,12 +16,25 @@ import hashlib
 from datetime import datetime
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.certificate import Certificate
 from app.models.certificate_batch import CertificateBatch
 from app.models.credential_root import CredentialRoot
 from app.models.merkle_tree_node import MerkleTreeNode
+
+
+class MerkleBatchNotFoundError(ValueError):
+    pass
+
+
+class MerkleRootAlreadyExistsError(ValueError):
+    pass
+
+
+class MerkleRootConflictError(ValueError):
+    pass
 
 
 def _pair_hash(left: str, right: str) -> str:
@@ -75,7 +88,17 @@ def compute_batch_root(db: Session, batch_id: int) -> CredentialRoot:
     """
     batch = db.get(CertificateBatch, batch_id)
     if batch is None:
-        raise ValueError(f"批次不存在：batch_id={batch_id}")
+        raise MerkleBatchNotFoundError(f"批次不存在：batch_id={batch_id}")
+
+    existing_root = (
+        db.query(CredentialRoot)
+        .filter(CredentialRoot.batch_id == batch_id)
+        .one_or_none()
+    )
+    if existing_root is not None:
+        raise MerkleRootAlreadyExistsError(
+            f"批次batch_id={batch_id}已经生成Merkle Root：{existing_root.root_no}"
+        )
 
     certificates = (
         db.query(Certificate)
@@ -117,6 +140,7 @@ def compute_batch_root(db: Session, batch_id: int) -> CredentialRoot:
         merkle_root=merkle_root,
         previous_root_hash=previous_root_hash,
         current_root_hash=current_root_hash,
+        leaf_order_rule="CERTIFICATE_NO_ASC",
         odd_leaf_rule="DUPLICATE_LAST",
         leaf_count=len(leaf_hashes),
         created_at=created_at,
@@ -140,7 +164,13 @@ def compute_batch_root(db: Session, batch_id: int) -> CredentialRoot:
     for certificate in certificates:
         certificate.root_id = root_record.root_no
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise MerkleRootConflictError(
+            f"批次batch_id={batch_id}的Merkle Root生成发生并发冲突，请查询现有Root"
+        ) from exc
     db.refresh(root_record)
     return root_record
 
@@ -206,8 +236,13 @@ def get_merkle_proof(db: Session, certificate_no: str) -> dict:
     return {
         "certificate_no": certificate_no,
         "certificate_hash": certificate.certificate_hash,
+        "leaf_index": leaf_node.position_in_level,
+        "leaf_order_rule": root_record.leaf_order_rule,
+        "odd_leaf_rule": root_record.odd_leaf_rule,
+        "root_id": root_record.root_no,
         "root_no": root_record.root_no,
         "merkle_root": root_record.merkle_root,
+        "merkle_proof": proof,
         "proof": proof,
     }
 

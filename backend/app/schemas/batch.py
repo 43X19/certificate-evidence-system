@@ -56,8 +56,11 @@ class GenerateResult(BaseModel):
 # 批次算Merkle Root的返回值，字段对应数据库设计.md第9.1/9.2节
 class MerkleRootResult(BaseModel):
     batch_id: int
+    root_id: str
     root_no: str
     merkle_root: str
+    leaf_order_rule: str
+    odd_leaf_rule: str
     previous_root_hash: str | None = None
     current_root_hash: str
     leaf_count: int
