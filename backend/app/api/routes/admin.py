@@ -237,7 +237,7 @@ def _student_record(student: Student) -> dict[str, Any]:
         "student_id": student.student_id,
         "student_no": student.student_no,
         "student_name": student.student_name,
-        "college": "示范学院",
+        "college": student.college or "",
         "major": student.major_name or "",
         "class_name": student.class_name or "",
         "phone": "",
@@ -468,6 +468,7 @@ def create_student(payload: StudentPayload, db: Session = Depends(get_db)) -> Ap
     student = Student(
         student_no=payload.student_no,
         student_name=payload.student_name,
+        college=payload.college,
         class_name=payload.class_name,
         major_name=payload.major_name or payload.major,
     )
@@ -487,6 +488,8 @@ def update_student(student_id: int, payload: StudentPayload,
         student.student_no = payload.student_no
     if payload.student_name is not None:
         student.student_name = payload.student_name
+    if payload.college is not None:
+        student.college = payload.college
     if payload.class_name is not None:
         student.class_name = payload.class_name
     if payload.major is not None or payload.major_name is not None:

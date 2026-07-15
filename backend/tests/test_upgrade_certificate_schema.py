@@ -21,6 +21,9 @@ def test_upgrade_adds_missing_batch_fields_without_recreating_tables(monkeypatch
             text("CREATE TABLE revocation_records (certificate_id INTEGER, reason VARCHAR(255))")
         )
         connection.execute(
+            text("CREATE TABLE students (student_id INTEGER, student_no VARCHAR(64), student_name VARCHAR(64))")
+        )
+        connection.execute(
             text(
                 "CREATE TABLE credential_roots "
                 "(root_id INTEGER PRIMARY KEY, root_no VARCHAR(64), batch_id INTEGER, "
@@ -45,11 +48,13 @@ def test_upgrade_adds_missing_batch_fields_without_recreating_tables(monkeypatch
     batch_columns = {column["name"] for column in inspector.get_columns("certificate_batches")}
     certificate_columns = {column["name"] for column in inspector.get_columns("certificates")}
     revocation_columns = {column["name"] for column in inspector.get_columns("revocation_records")}
+    student_columns = {column["name"] for column in inspector.get_columns("students")}
     root_columns = {column["name"] for column in inspector.get_columns("credential_roots")}
 
     assert {"project_name", "template_id", "student_ids"} <= batch_columns
     assert {"project_name", "issue_time", "previous_certificate_no", "updated_at"} <= certificate_columns
     assert {"action_type", "new_certificate_no"} <= revocation_columns
+    assert "college" in student_columns
     assert "leaf_order_rule" in root_columns
     assert {"credential_roots", "merkle_tree_nodes"} <= set(inspector.get_table_names())
 

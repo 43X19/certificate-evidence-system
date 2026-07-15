@@ -38,6 +38,7 @@ def test_admin_students_returns_page_result(db_session) -> None:
         Student(
             student_no="S20260001",
             student_name="Demo Student A",
+            college="计算机学院",
             class_name="Class 1",
             major_name="Software Engineering",
         )
@@ -49,6 +50,37 @@ def test_admin_students_returns_page_result(db_session) -> None:
     assert data["code"] == 0
     assert data["data"]["total"] == 1
     assert data["data"]["records"][0]["student_no"] == "S20260001"
+    assert data["data"]["records"][0]["college"] == "计算机学院"
+
+
+def test_admin_student_college_is_created_and_updated(db_session) -> None:
+    created = asyncio.run(
+        request_json(
+            "POST",
+            "/api/admin/students",
+            json={
+                "student_no": "S20260005",
+                "student_name": "Demo Student E",
+                "college": "计算机学院",
+                "major": "软件工程",
+                "class_name": "Class 2",
+            },
+        )
+    )
+
+    student_id = created["data"]["student_id"]
+    assert created["data"]["college"] == "计算机学院"
+
+    updated = asyncio.run(
+        request_json(
+            "PUT",
+            f"/api/admin/students/{student_id}",
+            json={"college": "人工智能学院"},
+        )
+    )
+
+    assert updated["data"]["college"] == "人工智能学院"
+    assert db_session.get(Student, student_id).college == "人工智能学院"
 
 
 def test_admin_frontend_page_endpoints_are_available(db_session) -> None:
