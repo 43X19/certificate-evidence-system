@@ -10,6 +10,7 @@ student_ids，存在这张表的student_ids字段里；触发生成（POST /admi
 不需要再传一遍名单，直接用创建批次时存下来的这份。
 """
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -81,6 +82,8 @@ def create_batch_record(
 
 
 def _to_batch_detail(db: Session, batch: CertificateBatch) -> BatchDetail:
+    # certificates.batch_id 现在是真正的整数外键了（之前是字符串，2号/4号那边的
+    # 合并已经把模型改过来了），这里跟着改成用int比较，不再用str()包一层。
     cert_query = db.query(Certificate).filter(Certificate.batch_id == batch.batch_id)
     generated = cert_query.count()
     evidenced = cert_query.filter(Certificate.receipt_id.isnot(None)).count()
@@ -149,21 +152,27 @@ def create_batch(payload: BatchCreate, db: Session = Depends(get_db)) -> ApiResp
     return ApiResponse.success(_to_batch_detail(db, batch))
 
 
-@router.get("")
+@router.get("", response_model=ApiResponse[dict[str, Any]])
 def list_batches(
-    current: int | None = None,
-    size: int | None = None,
+    current: int = 1,
+    size: int = 10,
     keyword: str | None = None,
     status: str | None = None,
     db: Session = Depends(get_db),
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
+    """
+    前端frontend/src/types/index.ts里getBatches()要的是分页格式PageResult
+    （{records,total,current,size}），不是纯列表——之前这里直接返回列表，
+    格式跟前端期望的不一致，是我们自己的bug，已经修掉。始终返回分页格式
+    （不像_page_batch_records那样"没传分页参数就退化成纯列表"），因为
+    PageQuery里current/size是必填字段，前端调用这个接口时永远会带上，
+    保持行为单一、可预期。
+    """
     batches = db.query(CertificateBatch).order_by(CertificateBatch.created_at.desc()).all()
     records = [_to_batch_detail(db, batch).model_dump() for batch in batches]
-    if any(value is not None for value in (current, size, keyword, status)):
-        return ApiResponse.success(
-            _page_batch_records(records, current=current, size=size, keyword=keyword, status=status)
-        )
-    return ApiResponse.success(records)
+    return ApiResponse.success(
+        _page_batch_records(records, current=current, size=size, keyword=keyword, status=status)
+    )
 
 
 @router.put("/{batch_id}", response_model=ApiResponse[BatchDetail])
