@@ -15,6 +15,7 @@ from app.models.evidence_receipt import EvidenceReceipt
 from app.models.revocation_record import RevocationRecord
 from app.models.student import Student
 from app.services import certificate_service
+from app.api.routes.auth import require_roles
 
 
 router = APIRouter(prefix="/admin")
@@ -500,7 +501,11 @@ def update_student(student_id: int, payload: StudentPayload,
 
 
 @router.delete("/students/{student_id}")
-def delete_student(student_id: int, db: Session = Depends(get_db)) -> ApiResponse[dict[str, Any]]:
+def delete_student(
+    student_id: int,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_roles("ADMIN", "TEACHER")),
+) -> ApiResponse[dict[str, Any]]:
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="student not found")

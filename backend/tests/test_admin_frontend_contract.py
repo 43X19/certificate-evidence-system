@@ -26,8 +26,11 @@ async def request_json(method: str, path: str, **kwargs) -> dict:
 
 async def request_response(method: str, path: str, **kwargs) -> httpx.Response:
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    headers = kwargs.pop("headers", None)
+    if headers is None:
+        headers = {"Authorization": "Bearer demo-admin-token"}
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        response = await client.request(method, path, **kwargs)
+        response = await client.request(method, path, headers=headers, **kwargs)
     return response
 
 
@@ -130,6 +133,31 @@ def test_admin_deletes_unissued_student_and_removes_batch_assignment(db_session)
     assert response.json()["data"]["deleted"] is True
     assert db_session.get(Student, student.student_id) is None
     assert db_session.get(CertificateBatch, batch.batch_id).student_ids == []
+
+
+def test_admin_student_delete_requires_authorized_role(db_session) -> None:
+    student = Student(student_no="S20260013", student_name="Protected Student")
+    db_session.add(student)
+    db_session.commit()
+
+    unauthenticated = asyncio.run(
+        request_response(
+            "DELETE",
+            f"/api/admin/students/{student.student_id}",
+            headers={},
+        )
+    )
+    auditor = asyncio.run(
+        request_response(
+            "DELETE",
+            f"/api/admin/students/{student.student_id}",
+            headers={"Authorization": "Bearer demo-auditor-token"},
+        )
+    )
+
+    assert unauthenticated.status_code == 401
+    assert auditor.status_code == 403
+    assert db_session.get(Student, student.student_id) is not None
 
 
 def test_admin_rejects_deleting_student_with_certificate(db_session) -> None:
