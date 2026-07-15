@@ -5,5 +5,11 @@ import 'element-plus/dist/index.css'
 import App from './App.vue'
 import router from './router'
 import './styles/global.css'
+import './styles/responsive.css'
+
+router.afterEach((to) => {
+  const isResponsivePortal = to.path.startsWith('/student') || to.path.startsWith('/public/verify')
+  document.body.classList.toggle('portal-responsive', isResponsivePortal)
+})
 
 createApp(App).use(createPinia()).use(router).use(ElementPlus).mount('#app')

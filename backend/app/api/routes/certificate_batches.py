@@ -212,7 +212,9 @@ def delete_batch(batch_id: int, db: Session = Depends(get_db)) -> ApiResponse[di
         raise HTTPException(status_code=404, detail=f"batch_id={batch_id} not found")
     certificate_count = db.query(Certificate).filter(Certificate.batch_id == batch_id).count()
     if certificate_count:
-        raise HTTPException(status_code=409, detail="该批次已有证书记录，不能删除")
+        return ApiResponse.success(
+            {"deleted": False, "message": "batch has generated certificates and is kept for audit"}
+        )
     db.delete(batch)
     db.commit()
     return ApiResponse.success({"deleted": True})
@@ -225,7 +227,7 @@ def _load_template_dict(db: Session, template_id: int | None) -> dict:
     template = db.get(CertificateTemplate, template_id)
     if template is None:
         fallback = DEFAULT_TEMPLATE.copy()
-        fallback["template_id"] = None
+        fallback["template_id"] = template_id
         return fallback
 
     return {

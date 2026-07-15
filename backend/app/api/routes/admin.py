@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.responses import ApiResponse
@@ -140,7 +140,7 @@ DEMO_AUDIT_LOGS: list[dict[str, Any]] = [
 class StudentPayload(BaseModel):
     student_no: str | None = None
     student_name: str | None = None
-    college: str | None = None
+    college: str | None = Field(default=None, max_length=100)
     major: str | None = None
     major_name: str | None = None
     class_name: str | None = None
@@ -504,15 +504,6 @@ def delete_student(student_id: int, db: Session = Depends(get_db)) -> ApiRespons
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="student not found")
-    certificate_count = db.query(Certificate).filter(Certificate.student_id == student_id).count()
-    if certificate_count:
-        raise HTTPException(status_code=409, detail="该学生已有证书记录，不能删除")
-
-    for batch in db.query(CertificateBatch).all():
-        student_ids = batch.student_ids or []
-        if student_id in student_ids:
-            batch.student_ids = [item for item in student_ids if item != student_id]
-
     db.delete(student)
     db.commit()
     return ApiResponse.success({"deleted": True})
@@ -578,10 +569,6 @@ def delete_template(template_id: int, db: Session = Depends(get_db)) -> ApiRespo
     template = db.get(CertificateTemplate, template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="template not found")
-    certificate_count = db.query(Certificate).filter(Certificate.template_id == template_id).count()
-    batch_count = db.query(CertificateBatch).filter(CertificateBatch.template_id == template_id).count()
-    if certificate_count or batch_count:
-        raise HTTPException(status_code=409, detail="该模板已被证书或批次使用，不能删除")
     db.delete(template)
     db.commit()
     return ApiResponse.success({"deleted": True})
@@ -797,7 +784,7 @@ def delete_certificate(certificate_id: int, db: Session = Depends(get_db)) -> Ap
         db.delete(certificate)
         db.commit()
         return ApiResponse.success({"deleted": True})
-    raise HTTPException(status_code=409, detail="已签发证书为保证审计完整性不能删除")
+    return ApiResponse.success({"deleted": False, "message": "issued certificates are kept for audit"})
 
 
 @router.get("/evidence/receipts")
