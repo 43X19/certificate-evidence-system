@@ -4,7 +4,7 @@ from datetime import datetime
 import httpx
 
 from app.main import app
-from app.models.certificate import CertificateStatus
+from app.models.certificate import Certificate, CertificateStatus
 from app.models.certificate_batch import CertificateBatch
 from app.models.certificate_template import CertificateTemplate
 from app.models.student import Student
@@ -194,6 +194,32 @@ def test_admin_rejects_deleting_issued_certificate(db_session) -> None:
     assert "审计" in response.json()["message"]
 
 
+def test_admin_legacy_batch_route_rejects_deleting_generated_batch(db_session) -> None:
+    student = Student(student_no="S20260012", student_name="Legacy Batch Student")
+    batch = CertificateBatch(
+        batch_no="BATCH-LEGACY-PROTECTED",
+        batch_name="legacy protected batch",
+        status="DRAFT",
+        student_ids=[],
+    )
+    db_session.add_all([student, batch])
+    db_session.commit()
+    certificate_service.generate_certificate(
+        db_session,
+        student_id=student.student_id,
+        template=TEMPLATE,
+        issue_date=datetime(2026, 7, 15),
+        batch_id=batch.batch_id,
+    )
+
+    response = asyncio.run(
+        request_response("DELETE", f"/api/admin/certificate-batches/{batch.batch_id}")
+    )
+
+    assert response.status_code == 409
+    assert db_session.get(CertificateBatch, batch.batch_id) is not None
+
+
 def test_admin_reissues_revoked_certificate(db_session) -> None:
     student = Student(student_no="S20260010", student_name="Reissue Student")
     db_session.add(student)
@@ -224,6 +250,40 @@ def test_admin_reissues_revoked_certificate(db_session) -> None:
     data = response.json()["data"]
     assert data["old_certificate"]["status"] == CertificateStatus.REISSUED.value
     assert data["new_certificate"]["previous_certificate_no"] == certificate.certificate_no
+
+    repeated_response = asyncio.run(
+        request_response(
+            "POST",
+            f"/api/admin/certificates/{certificate.certificate_id}/reissue",
+            json={"reason": "duplicate reissue", "issue_date": "2026-07-16"},
+        )
+    )
+
+    assert repeated_response.status_code == 409
+    assert db_session.query(Certificate).count() == 2
+
+
+def test_admin_rejects_reissuing_certificate_that_is_not_revoked(db_session) -> None:
+    student = Student(student_no="S20260011", student_name="Valid Certificate Student")
+    db_session.add(student)
+    db_session.commit()
+    certificate = certificate_service.generate_certificate(
+        db_session,
+        student_id=student.student_id,
+        template=TEMPLATE,
+        issue_date=datetime(2026, 7, 15),
+    )
+
+    response = asyncio.run(
+        request_response(
+            "POST",
+            f"/api/admin/certificates/{certificate.certificate_id}/reissue",
+            json={"reason": "invalid direct reissue", "issue_date": "2026-07-16"},
+        )
+    )
+
+    assert response.status_code == 409
+    assert db_session.query(Certificate).count() == 1
 
 
 def test_admin_frontend_page_endpoints_are_available(db_session) -> None:

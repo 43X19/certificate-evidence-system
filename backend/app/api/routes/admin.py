@@ -630,6 +630,9 @@ def delete_batch(batch_id: int, db: Session = Depends(get_db)) -> ApiResponse[di
     batch = db.get(CertificateBatch, batch_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="batch not found")
+    certificate_count = db.query(Certificate).filter(Certificate.batch_id == batch_id).count()
+    if certificate_count:
+        raise HTTPException(status_code=409, detail="该批次已有证书记录，不能删除")
     db.delete(batch)
     db.commit()
     return ApiResponse.success({"deleted": True})
@@ -748,6 +751,8 @@ def reissue_certificate(certificate_id: int, payload: ReissuePayload,
     old_certificate = db.get(Certificate, certificate_id)
     if old_certificate is None:
         raise HTTPException(status_code=404, detail="certificate not found")
+    if old_certificate.status != CertificateStatus.REVOKED.value:
+        raise HTTPException(status_code=409, detail="仅已撤销证书可以补发")
 
     new_certificate = certificate_service.generate_certificate(
         db,

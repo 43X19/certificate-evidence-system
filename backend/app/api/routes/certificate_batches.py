@@ -224,9 +224,7 @@ def _load_template_dict(db: Session, template_id: int | None) -> dict:
 
     template = db.get(CertificateTemplate, template_id)
     if template is None:
-        fallback = DEFAULT_TEMPLATE.copy()
-        fallback["template_id"] = None
-        return fallback
+        raise HTTPException(status_code=404, detail=f"template_id={template_id} not found")
 
     return {
         "template_id": template.template_id,

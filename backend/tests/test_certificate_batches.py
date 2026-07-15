@@ -11,6 +11,8 @@ import asyncio
 import httpx
 
 from app.main import app
+from app.models.certificate import Certificate
+from app.models.certificate_template import CertificateTemplate
 from app.models.student import Student
 
 
@@ -121,6 +123,28 @@ def test_delete_batch_with_generated_certificates_returns_conflict(db_session) -
     assert "证书" in delete_resp.json()["message"]
 
 
+def test_generate_batch_rejects_template_id_that_does_not_exist(db_session) -> None:
+    student = Student(student_no="2023412", student_name="missing template student")
+    db_session.add(student)
+    db_session.commit()
+    batch_id = asyncio.run(
+        _post_json(
+            "/api/admin/batches",
+            {
+                "batch_name": "missing template batch",
+                "template_id": 999999,
+                "student_ids": [student.student_id],
+            },
+        )
+    ).json()["data"]["batch_id"]
+
+    generate_resp = asyncio.run(_post_json(f"/api/admin/batches/{batch_id}/generate"))
+
+    assert generate_resp.status_code == 404
+    assert "template_id=999999" in generate_resp.json()["message"]
+    assert db_session.query(Certificate).count() == 0
+
+
 def test_generate_batch_creates_certificate_for_each_stored_student(db_session) -> None:
     student1 = Student(student_no="2023403", student_name="小刚", class_name="1班")
     student2 = Student(student_no="2023404", student_name="小丽", class_name="1班")
@@ -150,7 +174,12 @@ def test_generate_batch_creates_certificate_for_each_stored_student(db_session) 
 
 def test_generate_batch_accepts_frontend_student_ids_body(db_session) -> None:
     student = Student(student_no="2023410", student_name="frontend user", class_name="1")
-    db_session.add(student)
+    template = CertificateTemplate(
+        template_name="frontend selected template",
+        template_code="TPL-FRONTEND-SELECTED",
+        status="ACTIVE",
+    )
+    db_session.add_all([student, template])
     db_session.commit()
 
     batch_id = asyncio.run(
@@ -164,7 +193,7 @@ def test_generate_batch_accepts_frontend_student_ids_body(db_session) -> None:
         _post_json(
             f"/api/admin/batches/{batch_id}/generate",
             {
-                "template_id": 1,
+                "template_id": template.template_id,
                 "student_ids": [student.student_id],
                 "issue_date": "2026-07-14",
             },
