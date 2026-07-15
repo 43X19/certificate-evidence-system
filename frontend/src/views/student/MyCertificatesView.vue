@@ -57,4 +57,5 @@ onMounted(load)
 
 <style scoped>
 .student-page{min-height:100vh;background:#f4f7fb}.plain-topbar{height:66px;background:#fff;border-bottom:1px solid #e7edf5;display:flex;align-items:center;justify-content:space-between;padding:0 42px}.plain-main{max-width:1180px;margin:0 auto;padding:28px 30px 42px}
+@media (max-width: 768px){.plain-topbar{height:auto;min-height:62px;padding:10px 16px;gap:12px;flex-wrap:wrap}.plain-main{padding:20px 14px 32px}}
 </style>

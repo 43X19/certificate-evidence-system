@@ -26,12 +26,12 @@ def test_build_verify_url_uses_configured_public_endpoint(monkeypatch) -> None:
     monkeypatch.setattr(
         certificate_service.settings,
         "public_verify_base_url",
-        "http://127.0.0.1:8000/api/verification/",
+        "http://127.0.0.1:5173/public/verify/",
     )
 
     assert (
         certificate_service._build_verify_url("CERT-20260715-0001")
-        == "http://127.0.0.1:8000/api/verification/CERT-20260715-0001"
+        == "http://127.0.0.1:5173/public/verify/CERT-20260715-0001"
     )
 
 

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     database_url: str | None = None
     jwt_secret: str | None = None
-    public_verify_base_url: str = "http://127.0.0.1:8000/api/verification"
+    public_verify_base_url: str = "http://127.0.0.1:5173/public/verify"
 
     model_config = SettingsConfigDict(
         env_file=".env",

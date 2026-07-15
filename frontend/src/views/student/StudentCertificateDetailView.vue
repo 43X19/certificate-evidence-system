@@ -13,7 +13,7 @@ const loading = ref(false)
 const studentNo = ref(String(route.query.student_no || getSavedStudentNo()))
 const certificate = ref<Certificate>()
 const certificateNo = computed(() => String(route.params.certificateNo || ''))
-const verifyLink = computed(() => certificate.value?.verify_url || `${location.origin}/public/verify/${certificateNo.value}`)
+const verifyLink = computed(() => `${location.origin}/public/verify/${encodeURIComponent(certificateNo.value)}`)
 const downloadUrl = computed(() => buildStudentDownloadUrl(certificateNo.value, studentNo.value))
 const qrcodeUrl = computed(() => buildStudentQrCodeUrl(certificateNo.value, studentNo.value))
 
@@ -79,4 +79,5 @@ onMounted(load)
 
 <style scoped>
 .student-page{min-height:100vh;background:#f4f7fb}.plain-topbar{height:66px;background:#fff;border-bottom:1px solid #e7edf5;display:flex;align-items:center;justify-content:space-between;padding:0 42px}.plain-main{max-width:1180px;margin:0 auto;padding:28px 30px 42px}.detail-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px}.certificate-title{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:1px solid #edf0f4;padding-bottom:16px}.certificate-title span{display:block;color:#2563eb;font-weight:700;margin-bottom:6px}.certificate-title h2{margin:0;font-size:24px}.certificate-summary dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:16px 18px;margin:20px 0 0}.certificate-summary dt{color:#7a8798}.certificate-summary dd{margin:0;font-weight:600}.share-panel{text-align:center}.share-panel h3{margin-top:0}.share-panel img,.qr-fallback{width:190px;height:190px;margin:12px auto 18px;border:1px solid #d9e2ee;border-radius:8px;background:#fff;object-fit:contain}.qr-fallback{display:grid;place-items:center;color:#2563eb;font-weight:800;font-size:32px}.share-panel p{color:#758196;line-height:1.7;text-align:left}.break{word-break:break-all;font-family:Consolas,monospace;font-size:12px}
+@media (max-width: 768px){.plain-topbar{height:auto;min-height:62px;padding:10px 16px;gap:12px;flex-wrap:wrap}.plain-main{padding:20px 14px 32px}.detail-grid{grid-template-columns:1fr}.certificate-title{flex-wrap:wrap}.certificate-summary dl{grid-template-columns:1fr;gap:6px}.certificate-summary dd{margin-bottom:10px}.share-panel img,.qr-fallback{width:170px;height:170px}}
 </style>
