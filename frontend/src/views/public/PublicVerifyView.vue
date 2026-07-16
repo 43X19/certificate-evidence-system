@@ -36,10 +36,12 @@ async function loadProof(no: string) {
 
 async function verifyNo() {
   if (!certificateNo.value) return ElMessage.warning('请输入证书编号')
+  const no = certificateNo.value.trim()
   loading.value = true
   try {
-    result.value = await verifyByCertificateNo(certificateNo.value.trim())
-    router.replace(`/public/verify/${encodeURIComponent(certificateNo.value.trim())}`)
+    result.value = await verifyByCertificateNo(no)
+    await loadProof(no)
+    router.replace(`/public/verify/${encodeURIComponent(no)}`)
   } finally {
     loading.value = false
   }
@@ -48,9 +50,11 @@ async function verifyNo() {
 async function verifyFile() {
   if (!certificateNo.value) return ElMessage.warning('请输入证书编号')
   if (!selectedFile.value) return ElMessage.warning('请选择 PDF 文件')
+  const no = certificateNo.value.trim()
   loading.value = true
   try {
-    result.value = await verifyByPdf(certificateNo.value.trim(), selectedFile.value)
+    result.value = await verifyByPdf(no, selectedFile.value)
+    await loadProof(no)
   } finally {
     loading.value = false
   }
