@@ -14,7 +14,7 @@ async function submit() {
   if (!form.username || !form.password) return ElMessage.warning('请输入用户名和密码')
   loading.value = true
   try { await auth.login(form.username, form.password); ElMessage.success('登录成功'); const home=roleHome(auth.user?.role);const redirect=typeof route.query.redirect==='string'?route.query.redirect:'';router.replace(canRoleAccessPath(redirect,auth.user?.role)?redirect:home) }
-  catch (e) { ElMessage.error(e instanceof Error ? e.message : '登录失败') }
+  catch (e) { if (!(e as { __messageShown?: boolean })?.__messageShown) ElMessage.error(e instanceof Error ? e.message : '登录失败') }
   finally { loading.value = false }
 }
 </script>
