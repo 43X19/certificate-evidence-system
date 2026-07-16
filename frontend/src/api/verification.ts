@@ -1,6 +1,9 @@
+import axios from 'axios'
 import request from '@/utils/request'
-import type { VerificationResult } from '@/types'
+import type { ApiResponse, MerkleProofResult, VerificationResult } from '@/types'
 import { certificates, receipts, useMock, wait } from './mock'
+
+const apiBase = import.meta.env.VITE_API_BASE_URL || '/api'
 
 function buildResult(partial: Partial<VerificationResult> & Pick<VerificationResult, 'certificate_no' | 'result'>): VerificationResult {
   const messageMap: Record<string, string> = {
@@ -59,4 +62,39 @@ export async function verifyByPdf(certificateNo: string, file: File): Promise<Ve
   const form = new FormData()
   form.append('file', file)
   return await request.post(`/verification/${encodeURIComponent(certificateNo)}/file`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+}
+
+export async function getMerkleProof(certificateNo: string): Promise<MerkleProofResult | undefined> {
+  if (useMock) {
+    await wait()
+    const row = certificates.find(item => item.certificate_no === certificateNo)
+    if (!row || !row.receipt_id) return undefined
+    const sibling = 'f'.repeat(64)
+    return {
+      certificate_no: row.certificate_no,
+      certificate_hash: row.certificate_hash,
+      leaf_index: Math.max(row.certificate_id - 1, 0),
+      leaf_order_rule: 'CERTIFICATE_NO_ASC',
+      odd_leaf_rule: 'DUPLICATE_LAST',
+      leaf_count: 3,
+      root_id: 'ROOT-20260714-0001',
+      root_no: 'ROOT-20260714-0001',
+      merkle_root: '9'.repeat(64),
+      previous_root_hash: '0'.repeat(64),
+      current_root_hash: '8'.repeat(64),
+      tx_hash: row.status === 'REVOKED' ? '0x72ab903dd8e8a8271c05db9d900c612d4b02859cd8577be415cf7b7ac91fc112' : undefined,
+      merkle_proof: [{ sibling_hash: sibling, direction: 'RIGHT' }],
+      proof: [{ sibling_hash: sibling, direction: 'RIGHT' }],
+      proof_valid: true,
+      verified: true
+    }
+  }
+  const response = await axios.get<ApiResponse<MerkleProofResult>>(
+    `/verification/${encodeURIComponent(certificateNo)}/merkle-proof`,
+    { baseURL: apiBase, validateStatus: status => status < 500 }
+  )
+  if (response.status === 200 && response.data?.code === 0) {
+    return response.data.data
+  }
+  return undefined
 }
