@@ -15,7 +15,7 @@ const allMenus=[
  {path:'/batches',label:'证书批次',icon:Collection,roles:['ADMIN','TEACHER']},
  {path:'/certificates',label:'证书管理',icon:DocumentChecked,roles:['ADMIN','TEACHER']},
  {path:'/chain',label:'存证回执',icon:Link,roles:['ADMIN','TEACHER','AUDITOR']},
- {path:'/audit',label:'操作日志',icon:Operation,roles:['ADMIN','AUDITOR']}
+ {path:'/audit',label:'操作日志',icon:Operation,roles:['ADMIN','TEACHER','AUDITOR']}
 ] as Array<{path:string;label:string;icon:unknown;roles:Role[]}>
 const menus=computed(()=>allMenus.filter(item=>auth.user&&item.roles.includes(auth.user.role)))
 async function logout(){await ElMessageBox.confirm('确认退出当前账号吗？','退出登录');auth.logout();router.replace('/login')}
