@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from app.core.responses import ApiResponse
 
@@ -17,6 +17,21 @@ DEMO_USERS = {
     "teacher": {"user_id": 2, "display_name": "实训教师", "role": "TEACHER"},
     "auditor": {"user_id": 3, "display_name": "审计员", "role": "AUDITOR"},
 }
+
+
+def require_roles(*allowed_roles: str):
+    def dependency(authorization: str | None = Header(default=None)) -> dict:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="未登录或 token 失效")
+        token = authorization.removeprefix("Bearer ").strip()
+        for username, user in DEMO_USERS.items():
+            if token == f"demo-{username}-token":
+                if user["role"] not in allowed_roles:
+                    raise HTTPException(status_code=403, detail="无权限执行此操作")
+                return {"username": username, **user}
+        raise HTTPException(status_code=401, detail="未登录或 token 失效")
+
+    return dependency
 
 
 @router.post("/login")

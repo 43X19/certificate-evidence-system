@@ -15,7 +15,7 @@ from app.models.certificate_batch import CertificateBatch
 from app.models.student import Student
 
 
-def _build_excel(rows: list[tuple], header: tuple = ("学号", "姓名", "班级", "专业")) -> bytes:
+def _build_excel(rows: list[tuple], header: tuple = ("学号", "姓名", "学院", "班级", "专业")) -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.append(header)
@@ -39,8 +39,8 @@ async def _post_import(content: bytes, batch_name: str = "测试批次", templat
 def test_import_students_success(db_session) -> None:
     content = _build_excel(
         [
-            ("2023101", "张三", "1班", "软件工程"),
-            ("2023102", "李四", "1班", "软件工程"),
+            ("2023101", "张三", "计算机学院", "1班", "软件工程"),
+            ("2023102", "李四", "计算机学院", "1班", "软件工程"),
         ]
     )
 
@@ -53,6 +53,7 @@ def test_import_students_success(db_session) -> None:
 
     saved = db_session.query(Student).filter(Student.student_no.in_(["2023101", "2023102"])).all()
     assert len(saved) == 2
+    assert {student.college for student in saved} == {"计算机学院"}
 
     # 导入之后应该顺带建了一个批次记录
     batches = db_session.query(CertificateBatch).all()
@@ -67,10 +68,10 @@ def test_import_students_reports_row_level_failures(db_session) -> None:
 
     content = _build_excel(
         [
-            ("2023201", "赵六", "", ""),
-            ("", "缺学号", "", ""),
-            ("2023202", "", "", ""),
-            ("2023200", "重复的学号", "", ""),  # 和数据库里已有的学生重复
+            ("2023201", "赵六", "", "", ""),
+            ("", "缺学号", "", "", ""),
+            ("2023202", "", "", "", ""),
+            ("2023200", "重复的学号", "", "", ""),  # 和数据库里已有的学生重复
         ]
     )
 
@@ -95,11 +96,26 @@ def test_import_students_rejects_missing_required_headers(db_session) -> None:
 
 def test_import_students_supports_english_headers(db_session) -> None:
     content = _build_excel(
-        [("2023301", "孙七", "2班", "计算机")],
-        header=("student_no", "student_name", "class_name", "major_name"),
+        [("2023301", "孙七", "计算机学院", "2班", "计算机")],
+        header=("student_no", "student_name", "college", "class_name", "major_name"),
     )
 
     response = asyncio.run(_post_import(content))
 
     data = response.json()["data"]
     assert data["success_count"] == 1
+    assert db_session.query(Student).filter_by(student_no="2023301").one().college == "计算机学院"
+
+
+def test_import_students_rejects_overlong_college_without_saving_student(db_session) -> None:
+    content = _build_excel(
+        [("2023401", "超长学院测试", "学" * 101, "3班", "软件工程")]
+    )
+
+    response = asyncio.run(_post_import(content))
+    data = response.json()["data"]
+
+    assert data["success_count"] == 0
+    assert data["failed_count"] == 1
+    assert data["failures"][0]["reason"] == "学院名称不能超过100个字符"
+    assert db_session.query(Student).filter_by(student_no="2023401").one_or_none() is None

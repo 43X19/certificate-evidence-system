@@ -9,11 +9,13 @@
 student_ids，存在这张表的student_ids字段里；触发生成（POST /admin/batches/{id}/generate）
 不需要再传一遍名单，直接用创建批次时存下来的这份。
 """
+import logging
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.responses import ApiResponse
@@ -30,10 +32,12 @@ from app.schemas.batch import (
     EvidenceBatchResult,
     GenerateFailure,
     GenerateResult,
+    MerkleRootResult,
 )
-from app.services import certificate_service
+from app.services import certificate_service, chain_service, merkle_service
 
 router = APIRouter(prefix="/admin/batches")
+logger = logging.getLogger(__name__)
 
 
 # 模板管理功能还没做出来之前，生成证书用的模板内容暂时用这个默认值兜底
@@ -208,9 +212,7 @@ def delete_batch(batch_id: int, db: Session = Depends(get_db)) -> ApiResponse[di
         raise HTTPException(status_code=404, detail=f"batch_id={batch_id} not found")
     certificate_count = db.query(Certificate).filter(Certificate.batch_id == batch_id).count()
     if certificate_count:
-        return ApiResponse.success(
-            {"deleted": False, "message": "batch has generated certificates and is kept for audit"}
-        )
+        raise HTTPException(status_code=409, detail="该批次已有证书记录，不能删除")
     db.delete(batch)
     db.commit()
     return ApiResponse.success({"deleted": True})
@@ -222,9 +224,7 @@ def _load_template_dict(db: Session, template_id: int | None) -> dict:
 
     template = db.get(CertificateTemplate, template_id)
     if template is None:
-        fallback = DEFAULT_TEMPLATE.copy()
-        fallback["template_id"] = template_id
-        return fallback
+        raise HTTPException(status_code=404, detail=f"template_id={template_id} not found")
 
     return {
         "template_id": template.template_id,
@@ -341,5 +341,87 @@ def evidence_batch(
             receipt_ids=receipt_ids,
             evidenced=len(receipt_ids),
             newly_evidenced=evidenced_count,
+        )
+    )
+
+
+@router.post("/{batch_id}/merkle-root", response_model=ApiResponse[MerkleRootResult])
+def compute_merkle_root(batch_id: int, db: Session = Depends(get_db)) -> ApiResponse[MerkleRootResult]:
+    """
+    Merkle Root（P2加分项，FISCO_BCOS与存证降级策略.md第8节 / 数据库设计.md第9节）：
+    本地哈希链之上叠加的一层，把批次内所有证书哈希汇总成一个Root，为以后接测试链
+    做准备（如果接了测试链，一个批次只需要写一笔交易，不是逐张证书上链）。
+
+    单独开一个路由、不塞进上面的evidence_batch()里，是为了不改动4号那边已经跑通
+    的存证主流程——这一步失败（比如批次里还有证书没生成完）不会影响evidence_batch
+    已经做完的事，符合降级策略里"Root是可选叠加层，不能阻塞P0主线"的要求。
+    """
+    try:
+        root_record = merkle_service.compute_batch_root(db, batch_id)
+    except merkle_service.MerkleBatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except merkle_service.MerkleRootAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except merkle_service.MerkleRootConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        db.add(
+            AuditLog(
+                action="批次Merkle Root生成",
+                target_type="证书管理",
+                target_id=root_record.root_no,
+                operator="admin",
+                detail=f"批次batch_id={batch_id}生成Root，包含{root_record.leaf_count}张证书",
+            )
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("failed to write Merkle Root audit log")
+
+    # 测试链接入（P2加分项）：本地Root已经算好、已经落库，这一步是在这之上
+    # "顺便"写一笔链上交易。chain_service内部保证了没配置/连不上/写入失败都只
+    # 返回None、不抛异常，所以这里不需要try/except——即使这一步完全没跑，
+    # 上面的Root计算结果也已经完整、可用，不受影响。
+    tx_hash = chain_service.record_root_on_chain(
+        root_no=root_record.root_no,
+        batch_id=batch_id,
+        merkle_root=root_record.merkle_root,
+        previous_root_hash=root_record.previous_root_hash,
+        current_root_hash=root_record.current_root_hash,
+    )
+    if tx_hash:
+        try:
+            root_record.tx_hash = tx_hash
+            db.add(
+                AuditLog(
+                    action="批次Root上链",
+                    target_type="证书管理",
+                    target_id=root_record.root_no,
+                    operator="admin",
+                    detail=f"交易哈希：{tx_hash}",
+                )
+            )
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            tx_hash = None
+            logger.exception("failed to persist chain transaction receipt")
+
+    return ApiResponse.success(
+        MerkleRootResult(
+            batch_id=batch_id,
+            root_id=root_record.root_no,
+            root_no=root_record.root_no,
+            merkle_root=root_record.merkle_root,
+            leaf_order_rule=root_record.leaf_order_rule,
+            odd_leaf_rule=root_record.odd_leaf_rule,
+            previous_root_hash=root_record.previous_root_hash,
+            current_root_hash=root_record.current_root_hash,
+            leaf_count=root_record.leaf_count,
+            tx_hash=tx_hash,
         )
     )

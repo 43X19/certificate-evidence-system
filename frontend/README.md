@@ -13,6 +13,8 @@
 - 回执刷新和本地哈希链完整性校验
 - 操作日志和首页统计
 - ADMIN、TEACHER、AUDITOR动态菜单与路由权限
+- 学生证书中心、证书详情、PDF 下载和二维码展示
+- 公共编号验真与上传 PDF 复验页面
 
 ## 安装与运行
 
@@ -49,11 +51,13 @@ VITE_USE_MOCK=false
 
 Vite会把 `/api` 代理到 `http://127.0.0.1:8000`。页面不直接保存接口URL；所有接口均封装在 `src/api`，后端契约变化时只修改API层。
 
+学生端当前以 `student_no` 查询参数作为模拟身份，只用于课程演示数据，不是正式登录鉴权。手机扫码演示时使用 `npm run dev -- --host 0.0.0.0` 启动前端，并把后端 `PUBLIC_VERIFY_BASE_URL` 设置为 `http://<局域网IP>:5173/public/verify` 后重新生成证书二维码。
+
 ## 统一响应
 
 ```json
 {
-  "code": 200,
+  "code": 0,
   "message": "操作成功",
   "data": {}
 }
@@ -87,4 +91,4 @@ npm run build
 构建产物位于 `dist`。
 ## 基础页面设计
 
-页面路由、组件拆分、Mock 示例与 FastAPI 接口清单见 docs/ADMIN_BASIC_DESIGN.md。
+页面路由、组件拆分、Mock 示例与 FastAPI 接口清单见 [`../docs/协作管理/管理员前端/管理员前端基础页面设计.md`](../docs/协作管理/管理员前端/管理员前端基础页面设计.md)。

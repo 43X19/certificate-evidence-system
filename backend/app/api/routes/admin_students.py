@@ -4,6 +4,7 @@
 Excel 格式要求：第一行是表头，支持中英文两种写法（可以混用）：
     学号 / student_no      —— 必填
     姓名 / student_name    —— 必填
+    学院 / college         —— 选填
     班级 / class_name      —— 选填
     专业 / major_name      —— 选填
 从第二行开始每一行是一个学生。学号重复（不管是和数据库里已有的学生重复，还是
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/admin/students")
 _HEADER_ALIASES: dict[str, set[str]] = {
     "student_no": {"student_no", "学号"},
     "student_name": {"student_name", "姓名"},
+    "college": {"college", "学院"},
     "class_name": {"class_name", "班级"},
     "major_name": {"major_name", "专业"},
 }
@@ -94,10 +96,16 @@ async def import_students(
 
         class_name = row[column_index["class_name"]] if "class_name" in column_index else None
         major_name = row[column_index["major_name"]] if "major_name" in column_index else None
+        college = row[column_index["college"]] if "college" in column_index else None
+        college_text = str(college).strip() if college is not None else None
+        if college_text and len(college_text) > 100:
+            failures.append(ImportFailure(row=row_number, reason="学院名称不能超过100个字符"))
+            continue
 
         student = Student(
             student_no=student_no,
             student_name=student_name,
+            college=college_text or None,
             class_name=str(class_name).strip() if class_name else None,
             major_name=str(major_name).strip() if major_name else None,
         )

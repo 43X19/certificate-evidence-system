@@ -53,6 +53,22 @@ class GenerateResult(BaseModel):
     failures: list[GenerateFailure] = []
 
 
+# 批次算Merkle Root的返回值，字段对应数据库设计.md第9.1/9.2节
+class MerkleRootResult(BaseModel):
+    batch_id: int
+    root_id: str
+    root_no: str
+    merkle_root: str
+    leaf_order_rule: str
+    odd_leaf_rule: str
+    previous_root_hash: str | None = None
+    current_root_hash: str
+    leaf_count: int
+    # 测试链接入（P2加分项）：写链成功才有值，没配置/失败保持None，
+    # 前端可以据此判断"要不要展示链上交易哈希这一栏"。
+    tx_hash: str | None = None
+
+
 class EvidenceBatchResult(BaseModel):
     batch_id: int
     success_count: int
