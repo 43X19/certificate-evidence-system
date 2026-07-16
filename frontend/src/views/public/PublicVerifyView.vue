@@ -4,8 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Document, Search } from '@element-plus/icons-vue'
 import StatusTag from '@/components/StatusTag.vue'
-import type { VerificationResult } from '@/types'
-import { verifyByCertificateNo, verifyByPdf } from '@/api/verification'
+import type { MerkleProofResult, VerificationResult } from '@/types'
+import { getMerkleProof, verifyByCertificateNo, verifyByPdf } from '@/api/verification'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,6 +13,8 @@ const loading = ref(false)
 const certificateNo = ref(String(route.params.certificateNo || ''))
 const selectedFile = ref<File>()
 const result = ref<VerificationResult>()
+const proof = ref<MerkleProofResult>()
+const proofState = ref<'idle' | 'loading' | 'found' | 'missing'>('idle')
 const resultTone = computed(() => {
   const value = result.value?.verify_result
   if (value === 'PASS') return 'pass'
@@ -23,6 +25,13 @@ const resultTone = computed(() => {
 function chooseFile(event: Event) {
   const input = event.target as HTMLInputElement
   selectedFile.value = input.files?.[0]
+}
+
+async function loadProof(no: string) {
+  proof.value = undefined
+  proofState.value = 'loading'
+  try { proof.value = await getMerkleProof(no); proofState.value = 'found' }
+  catch { proofState.value = 'missing' }
 }
 
 async function verifyNo() {
@@ -114,12 +123,32 @@ onMounted(() => {
           <dt>撤销原因</dt><dd>{{ result.revocation_reason || '—' }}</dd>
         </dl>
       </section>
-    </main>
+
+      <section v-if="result" class="verify-result panel merkle-panel">
+        <div class="result-head">
+          <div class="result-icon">P2</div>
+          <div><span>批次级存证</span><h2>Merkle Root 与 Proof 校验</h2></div>
+          <el-tag v-if="proofState === 'found'" :type="proof?.proof_valid ? 'success' : 'danger'">{{ proof?.proof_valid ? 'Proof有效' : 'Proof无效' }}</el-tag>
+          <el-tag v-else-if="proofState === 'loading'" type="info">查询中</el-tag>
+          <el-tag v-else type="info">未生成Root</el-tag>
+        </div>
+        <el-alert v-if="proofState === 'missing'" title="该证书所属批次尚未生成 Merkle Root，基础验真结果不受影响。" type="info" :closable="false" />
+        <template v-if="proof">
+          <div class="result-grid merkle-grid">
+            <div><span>Root编号</span><b>{{ proof.root_no }}</b></div><div><span>叶子序号</span><b>{{ proof.leaf_index }}</b></div>
+            <div><span>排序规则</span><b>{{ proof.leaf_order_rule }}</b></div><div><span>奇数叶规则</span><b>{{ proof.odd_leaf_rule }}</b></div>
+          </div>
+          <dl class="hash-list"><dt>Merkle Root</dt><dd>{{ proof.merkle_root }}</dd><dt>证书哈希</dt><dd>{{ proof.certificate_hash }}</dd></dl>
+          <el-table :data="proof.merkle_proof" size="small" empty-text="单叶批次无需兄弟节点">
+            <el-table-column type="index" label="#" width="55"/><el-table-column prop="direction" label="方向" width="100"/><el-table-column prop="sibling_hash" label="兄弟节点哈希" show-overflow-tooltip/>
+          </el-table>
+        </template>
+      </section>    </main>
   </div>
 </template>
 
 <style scoped>
-.verify-page{min-height:100vh;background:#f4f7fb}.verify-topbar{height:70px;background:#fff;border-bottom:1px solid #e6edf5;display:flex;justify-content:space-between;align-items:center;padding:0 46px}.verify-topbar b,.verify-topbar span{display:block}.verify-topbar span{font-size:12px;color:#7d8a9d;margin-top:4px}.verify-main{max-width:1180px;margin:0 auto;padding:34px 30px 46px}.verify-workbench{display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:28px;align-items:end;margin-bottom:22px}.verify-copy p{color:#2563eb;font-weight:700;margin:0 0 10px}.verify-copy h1{font-size:38px;line-height:1.25;margin:0 0 12px;max-width:620px}.verify-copy span{color:#718096}.verify-panel{background:#fff;border:1px solid #e7edf5;border-radius:14px;padding:20px}.verify-form{display:flex;gap:10px}.verify-form .el-input{flex:1}.upload-row{align-items:center}.file-picker{height:32px;min-width:150px;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #dcdfe6;border-radius:4px;padding:0 11px;color:#606266;cursor:pointer;background:#fff}.file-picker input{display:none}.file-picker span{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.verify-result{border-left:5px solid #e2e8f0}.verify-result.pass{border-left-color:#10b981}.verify-result.danger{border-left-color:#ef4444}.verify-result.warning{border-left-color:#f59e0b}.result-head{display:flex;align-items:center;gap:16px;border-bottom:1px solid #edf0f4;padding-bottom:18px}.result-head>div:nth-child(2){flex:1}.result-head span{color:#7b8798}.result-head h2{font-size:22px;margin:5px 0 0}.result-icon{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;background:#eaf2ff;color:#2563eb;font-size:22px}.result-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#e7edf5;border:1px solid #e7edf5;border-radius:10px;overflow:hidden;margin-top:18px}.result-grid>div{background:#fff;padding:15px}.result-grid span,.result-grid b{display:block}.result-grid span{font-size:12px;color:#7d8a9d}.result-grid b{margin-top:5px}.hash-list{margin:18px 0 0}.hash-list dt{font-size:12px;color:#7d8a9d;margin-top:14px}.hash-list dd{margin:6px 0 0;word-break:break-all;font-family:Consolas,monospace;font-size:12px}
+.verify-page{min-height:100vh;background:#f4f7fb}.verify-topbar{height:70px;background:#fff;border-bottom:1px solid #e6edf5;display:flex;justify-content:space-between;align-items:center;padding:0 46px}.verify-topbar b,.verify-topbar span{display:block}.verify-topbar span{font-size:12px;color:#7d8a9d;margin-top:4px}.verify-main{max-width:1180px;margin:0 auto;padding:34px 30px 46px}.verify-workbench{display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:28px;align-items:end;margin-bottom:22px}.verify-copy p{color:#2563eb;font-weight:700;margin:0 0 10px}.verify-copy h1{font-size:38px;line-height:1.25;margin:0 0 12px;max-width:620px}.verify-copy span{color:#718096}.verify-panel{background:#fff;border:1px solid #e7edf5;border-radius:14px;padding:20px}.verify-form{display:flex;gap:10px}.verify-form .el-input{flex:1}.upload-row{align-items:center}.file-picker{height:32px;min-width:150px;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #dcdfe6;border-radius:4px;padding:0 11px;color:#606266;cursor:pointer;background:#fff}.file-picker input{display:none}.file-picker span{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.verify-result{border-left:5px solid #e2e8f0}.verify-result.pass{border-left-color:#10b981}.verify-result.danger{border-left-color:#ef4444}.verify-result.warning{border-left-color:#f59e0b}.merkle-panel{border-left-color:#2563eb}.merkle-panel .el-alert{margin-top:18px}.result-head{display:flex;align-items:center;gap:16px;border-bottom:1px solid #edf0f4;padding-bottom:18px}.result-head>div:nth-child(2){flex:1}.result-head span{color:#7b8798}.result-head h2{font-size:22px;margin:5px 0 0}.result-icon{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;background:#eaf2ff;color:#2563eb;font-size:22px}.result-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#e7edf5;border:1px solid #e7edf5;border-radius:10px;overflow:hidden;margin-top:18px}.result-grid>div{background:#fff;padding:15px}.result-grid span,.result-grid b{display:block}.result-grid span{font-size:12px;color:#7d8a9d}.result-grid b{margin-top:5px}.hash-list{margin:18px 0 0}.hash-list dt{font-size:12px;color:#7d8a9d;margin-top:14px}.hash-list dd{margin:6px 0 0;word-break:break-all;font-family:Consolas,monospace;font-size:12px}
 @media (max-width: 768px){.verify-topbar{height:auto;min-height:62px;padding:10px 16px;gap:12px;flex-wrap:wrap}.verify-main{padding:22px 14px 32px}.verify-workbench{grid-template-columns:1fr;gap:18px}.verify-copy h1{font-size:28px}.verify-panel{padding:14px}.verify-form{flex-direction:column}.upload-row{align-items:stretch}.file-picker{box-sizing:border-box;width:100%}.file-picker span{max-width:calc(100vw - 100px)}.result-head{align-items:flex-start;flex-wrap:wrap}.result-head>div:nth-child(2){min-width:0}.result-head h2{font-size:18px}.result-grid{grid-template-columns:1fr 1fr}.result-grid b{overflow-wrap:anywhere}}
 @media (max-width: 480px){.result-grid{grid-template-columns:1fr}}
 </style>
