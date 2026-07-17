@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str | None = None
     jwt_secret: str | None = None
     public_verify_base_url: str = "http://127.0.0.1:5173/public/verify"
+    enable_demo_data: bool = False
 
     # 测试链接入相关配置（P2加分项，只上链Merkle Root，见chain_service.py）。
     # 三个都不是必填——没配置的话chain_service会直接跳过上链、不报错，

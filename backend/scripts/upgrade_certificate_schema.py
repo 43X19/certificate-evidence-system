@@ -93,6 +93,13 @@ def main() -> None:
     if _column_names("students"):
         _add_column_if_missing("students", "college", "college VARCHAR(100) NULL")
 
+    if _column_names("certificate_templates"):
+        _add_column_if_missing(
+            "certificate_templates",
+            "institution_name",
+            "institution_name VARCHAR(200) NOT NULL DEFAULT '示范学院'",
+        )
+
     if _column_names("certificate_batches"):
         # These fields were added after the initial batch table was created.
         # Keep them nullable so existing batches remain usable after upgrade.

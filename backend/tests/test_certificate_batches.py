@@ -10,6 +10,7 @@ import asyncio
 
 import httpx
 
+from app.api.routes.certificate_batches import _load_template_dict
 from app.main import app
 from app.models.certificate import Certificate
 from app.models.certificate_template import CertificateTemplate
@@ -211,10 +212,17 @@ def test_generate_batch_accepts_frontend_student_ids_body(db_session) -> None:
     template = CertificateTemplate(
         template_name="frontend selected template",
         template_code="TPL-FRONTEND-SELECTED",
+        institution_name="计算机学院",
+        content='{"project_name":"证书存证项目","grade_level":"优秀"}',
         status="ACTIVE",
     )
     db_session.add_all([student, template])
     db_session.commit()
+
+    generation_template = _load_template_dict(db_session, template.template_id)
+    assert generation_template["institution_name"] == "计算机学院"
+    assert generation_template["project_name"] == "证书存证项目"
+    assert generation_template["grade_level"] == "优秀"
 
     batch_id = asyncio.run(
         _post_json(

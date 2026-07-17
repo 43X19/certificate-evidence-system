@@ -35,7 +35,7 @@ from app.schemas.batch import (
     GenerateResult,
     MerkleRootResult,
 )
-from app.services import certificate_service, chain_service, merkle_service
+from app.services import certificate_service, chain_service, merkle_service, template_service
 
 router = APIRouter(prefix="/admin/batches", dependencies=[Depends(require_admin_access)])
 logger = logging.getLogger(__name__)
@@ -227,13 +227,7 @@ def _load_template_dict(db: Session, template_id: int | None) -> dict:
     if template is None:
         raise HTTPException(status_code=404, detail=f"template_id={template_id} not found")
 
-    return {
-        "template_id": template.template_id,
-        "template_code": template.template_code,
-        "project_name": template.template_name,
-        "institution_name": DEFAULT_TEMPLATE["institution_name"],
-        "grade_level": DEFAULT_TEMPLATE["grade_level"],
-    }
+    return template_service.to_generation_template(template)
 
 
 @router.post("/{batch_id}/generate", response_model=ApiResponse[GenerateResult])

@@ -157,6 +157,46 @@ def test_admin_student_rejects_overlong_college(db_session) -> None:
     assert db_session.query(Student).filter_by(student_no="S20260006").one_or_none() is None
 
 
+def test_admin_template_persists_configured_issuer_and_content(db_session) -> None:
+    created = asyncio.run(
+        request_json(
+            "POST",
+            "/api/admin/templates",
+            json={
+                "template_name": "自定义证书模板",
+                "institution_name": "计算机学院",
+                "content_config": {
+                    "course_name": "软件开发实训",
+                    "project_name": "证书存证项目",
+                    "certificate_title": "实训证书",
+                    "content": "已完成实训任务。",
+                    "issue_year": "2026",
+                    "fields": ["student_name", "certificate_no", "qr_code"],
+                },
+                "status": "ACTIVE",
+            },
+        )
+    )["data"]
+
+    assert created["issuer"] == "计算机学院"
+    assert created["course_name"] == "软件开发实训"
+    assert created["project_name"] == "证书存证项目"
+    assert created["certificate_title"] == "实训证书"
+
+    listed = asyncio.run(request_json("GET", "/api/admin/templates"))["data"]["records"]
+    assert listed[0]["issuer"] == "计算机学院"
+    assert db_session.get(CertificateTemplate, created["template_id"]).institution_name == "计算机学院"
+
+    updated = asyncio.run(
+        request_json(
+            "PUT",
+            f"/api/admin/templates/{created['template_id']}",
+            json={"institution_name": "信息工程学院"},
+        )
+    )["data"]
+    assert updated["issuer"] == "信息工程学院"
+
+
 def test_admin_deletes_unissued_student_and_removes_batch_assignment(db_session) -> None:
     student = Student(student_no="S20260006", student_name="Delete Student")
     db_session.add(student)
@@ -376,6 +416,28 @@ def test_admin_frontend_page_endpoints_are_available(db_session) -> None:
         data = asyncio.run(request_json("GET", path))
         assert data["code"] == 0, path
         assert "data" in data, path
+
+
+def test_empty_database_does_not_fallback_to_demo_records(db_session) -> None:
+    for path in (
+        "/api/admin/projects",
+        "/api/admin/students",
+        "/api/admin/templates",
+        "/api/admin/certificate-batches",
+        "/api/admin/certificates",
+        "/api/admin/evidence/receipts",
+        "/api/admin/audit-logs",
+    ):
+        page = asyncio.run(request_json("GET", path))["data"]
+        assert page["records"] == [], path
+        assert page["total"] == 0, path
+
+    dashboard = asyncio.run(
+        request_json("GET", "/api/admin/dashboard/statistics")
+    )["data"]
+    assert dashboard["student_count"] == 0
+    assert dashboard["certificateCount"] == 0
+    assert dashboard["evidencedCount"] == 0
 
 
 def test_admin_certificates_and_receipts_use_generated_chain_data(db_session) -> None:
