@@ -5,6 +5,7 @@ class StudentListItem(BaseModel):
     student_id: int
     student_no: str
     student_name: str
+    college: str | None = None
     class_name: str | None = None
     major_name: str | None = None
 

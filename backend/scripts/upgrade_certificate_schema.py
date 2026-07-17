@@ -76,22 +76,22 @@ def main() -> None:
         print("DATABASE_URL is not configured; schema upgrade skipped")
         return
 
-    if not _column_names("certificates"):
-        print("certificates table does not exist, run scripts.create_tables first")
-        return
+    if _column_names("certificates"):
+        _add_column_if_missing(
+            "certificates",
+            "project_name",
+            "project_name VARCHAR(200) NOT NULL DEFAULT '软件开发实训'",
+        )
+        _add_column_if_missing("certificates", "issue_time", "issue_time DATETIME NULL")
+        _add_column_if_missing(
+            "certificates",
+            "previous_certificate_no",
+            "previous_certificate_no VARCHAR(80) NULL",
+        )
+        _add_column_if_missing("certificates", "updated_at", "updated_at DATETIME NULL")
 
-    _add_column_if_missing(
-        "certificates",
-        "project_name",
-        "project_name VARCHAR(200) NOT NULL DEFAULT '软件开发实训'",
-    )
-    _add_column_if_missing("certificates", "issue_time", "issue_time DATETIME NULL")
-    _add_column_if_missing(
-        "certificates",
-        "previous_certificate_no",
-        "previous_certificate_no VARCHAR(80) NULL",
-    )
-    _add_column_if_missing("certificates", "updated_at", "updated_at DATETIME NULL")
+    if _column_names("students"):
+        _add_column_if_missing("students", "college", "college VARCHAR(100) NULL")
 
     if _column_names("certificate_batches"):
         # These fields were added after the initial batch table was created.
@@ -124,27 +124,34 @@ def main() -> None:
             "new_certificate_no VARCHAR(80) NULL",
         )
 
-    _create_merkle_tables_if_missing()
-    _add_column_if_missing(
-        "credential_roots",
-        "leaf_order_rule",
-        "leaf_order_rule VARCHAR(32) NOT NULL DEFAULT 'CERTIFICATE_NO_ASC'",
-    )
-    _create_unique_index_if_missing(
-        "credential_roots",
-        "uq_credential_roots_batch_id",
-        ("batch_id",),
-    )
-    _create_unique_index_if_missing(
-        "merkle_tree_nodes",
-        "uq_merkle_tree_nodes_position",
-        ("root_id", "level", "position_in_level"),
-    )
-
-    with engine.begin() as connection:
-        connection.execute(
-            text("UPDATE certificates SET updated_at = created_at WHERE updated_at IS NULL")
+    if _column_names("certificate_batches"):
+        _create_merkle_tables_if_missing()
+        _add_column_if_missing(
+            "credential_roots",
+            "leaf_order_rule",
+            "leaf_order_rule VARCHAR(32) NOT NULL DEFAULT 'CERTIFICATE_NO_ASC'",
         )
+        _add_column_if_missing(
+            "credential_roots",
+            "tx_hash",
+            "tx_hash VARCHAR(80) NULL",
+        )
+        _create_unique_index_if_missing(
+            "credential_roots",
+            "uq_credential_roots_batch_id",
+            ("batch_id",),
+        )
+        _create_unique_index_if_missing(
+            "merkle_tree_nodes",
+            "uq_merkle_tree_nodes_position",
+            ("root_id", "level", "position_in_level"),
+        )
+
+    if _column_names("certificates"):
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE certificates SET updated_at = created_at WHERE updated_at IS NULL")
+            )
 
     print("certificate schema upgraded")
 

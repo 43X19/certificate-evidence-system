@@ -4,6 +4,9 @@ from datetime import datetime
 import httpx
 
 from app.main import app
+from app.models.certificate import Certificate, CertificateStatus
+from app.models.certificate_batch import CertificateBatch
+from app.models.certificate_template import CertificateTemplate
 from app.models.student import Student
 from app.services import certificate_service
 
@@ -16,11 +19,19 @@ TEMPLATE = {
 
 
 async def request_json(method: str, path: str, **kwargs) -> dict:
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        response = await client.request(method, path, **kwargs)
+    response = await request_response(method, path, **kwargs)
     assert response.status_code == 200
     return response.json()
+
+
+async def request_response(method: str, path: str, **kwargs) -> httpx.Response:
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    headers = kwargs.pop("headers", None)
+    if headers is None:
+        headers = {"Authorization": "Bearer demo-admin-token"}
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.request(method, path, headers=headers, **kwargs)
+    return response
 
 
 def test_admin_login_matches_frontend_contract() -> None:
@@ -38,6 +49,7 @@ def test_admin_students_returns_page_result(db_session) -> None:
         Student(
             student_no="S20260001",
             student_name="Demo Student A",
+            college="计算机学院",
             class_name="Class 1",
             major_name="Software Engineering",
         )
@@ -49,6 +61,257 @@ def test_admin_students_returns_page_result(db_session) -> None:
     assert data["code"] == 0
     assert data["data"]["total"] == 1
     assert data["data"]["records"][0]["student_no"] == "S20260001"
+    assert data["data"]["records"][0]["college"] == "计算机学院"
+
+
+def test_admin_student_college_is_created_and_updated(db_session) -> None:
+    created = asyncio.run(
+        request_json(
+            "POST",
+            "/api/admin/students",
+            json={
+                "student_no": "S20260005",
+                "student_name": "Demo Student E",
+                "college": "计算机学院",
+                "major": "软件工程",
+                "class_name": "Class 2",
+            },
+        )
+    )
+
+    student_id = created["data"]["student_id"]
+    assert created["data"]["college"] == "计算机学院"
+
+    updated = asyncio.run(
+        request_json(
+            "PUT",
+            f"/api/admin/students/{student_id}",
+            json={"college": "人工智能学院"},
+        )
+    )
+
+    assert updated["data"]["college"] == "人工智能学院"
+    assert db_session.get(Student, student_id).college == "人工智能学院"
+
+
+def test_admin_student_rejects_overlong_college(db_session) -> None:
+    response = asyncio.run(
+        request_response(
+            "POST",
+            "/api/admin/students",
+            json={
+                "student_no": "S20260006",
+                "student_name": "Demo Student F",
+                "college": "学" * 101,
+            },
+        )
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == 422
+    assert db_session.query(Student).filter_by(student_no="S20260006").one_or_none() is None
+
+
+def test_admin_deletes_unissued_student_and_removes_batch_assignment(db_session) -> None:
+    student = Student(student_no="S20260006", student_name="Delete Student")
+    db_session.add(student)
+    db_session.flush()
+    batch = CertificateBatch(
+        batch_no="BATCH-STUDENT-DELETE",
+        batch_name="student delete cleanup",
+        status="DRAFT",
+        student_ids=[student.student_id],
+    )
+    db_session.add(batch)
+    db_session.commit()
+
+    response = asyncio.run(
+        request_response("DELETE", f"/api/admin/students/{student.student_id}")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["deleted"] is True
+    assert db_session.get(Student, student.student_id) is None
+    assert db_session.get(CertificateBatch, batch.batch_id).student_ids == []
+
+
+def test_admin_student_delete_requires_authorized_role(db_session) -> None:
+    student = Student(student_no="S20260013", student_name="Protected Student")
+    db_session.add(student)
+    db_session.commit()
+
+    unauthenticated = asyncio.run(
+        request_response(
+            "DELETE",
+            f"/api/admin/students/{student.student_id}",
+            headers={},
+        )
+    )
+    auditor = asyncio.run(
+        request_response(
+            "DELETE",
+            f"/api/admin/students/{student.student_id}",
+            headers={"Authorization": "Bearer demo-auditor-token"},
+        )
+    )
+
+    assert unauthenticated.status_code == 401
+    assert auditor.status_code == 403
+    assert db_session.get(Student, student.student_id) is not None
+
+
+def test_admin_rejects_deleting_student_with_certificate(db_session) -> None:
+    student = Student(student_no="S20260007", student_name="Issued Student")
+    db_session.add(student)
+    db_session.commit()
+    certificate_service.generate_certificate(
+        db_session,
+        student_id=student.student_id,
+        template=TEMPLATE,
+        issue_date=datetime(2026, 7, 15),
+    )
+
+    response = asyncio.run(
+        request_response("DELETE", f"/api/admin/students/{student.student_id}")
+    )
+
+    assert response.status_code == 409
+    assert "证书" in response.json()["message"]
+
+
+def test_admin_rejects_deleting_template_used_by_certificate(db_session) -> None:
+    student = Student(student_no="S20260008", student_name="Template Student")
+    template = CertificateTemplate(
+        template_name="Used Template",
+        template_code="TPL-USED-DELETE",
+        status="ACTIVE",
+    )
+    db_session.add_all([student, template])
+    db_session.commit()
+    certificate_service.generate_certificate(
+        db_session,
+        student_id=student.student_id,
+        template={**TEMPLATE, "template_id": template.template_id},
+        issue_date=datetime(2026, 7, 15),
+    )
+
+    response = asyncio.run(
+        request_response("DELETE", f"/api/admin/templates/{template.template_id}")
+    )
+
+    assert response.status_code == 409
+    assert "证书" in response.json()["message"] or "批次" in response.json()["message"]
+
+
+def test_admin_rejects_deleting_issued_certificate(db_session) -> None:
+    student = Student(student_no="S20260009", student_name="Certificate Delete Student")
+    db_session.add(student)
+    db_session.commit()
+    certificate = certificate_service.generate_certificate(
+        db_session,
+        student_id=student.student_id,
+        template=TEMPLATE,
+        issue_date=datetime(2026, 7, 15),
+    )
+
+    response = asyncio.run(
+        request_response("DELETE", f"/api/admin/certificates/{certificate.certificate_id}")
+    )
+
+    assert response.status_code == 409
+    assert "审计" in response.json()["message"]
+
+
+def test_admin_legacy_batch_route_rejects_deleting_generated_batch(db_session) -> None:
+    student = Student(student_no="S20260012", student_name="Legacy Batch Student")
+    batch = CertificateBatch(
+        batch_no="BATCH-LEGACY-PROTECTED",
+        batch_name="legacy protected batch",
+        status="DRAFT",
+        student_ids=[],
+    )
+    db_session.add_all([student, batch])
+    db_session.commit()
+    certificate_service.generate_certificate(
+        db_session,
+        student_id=student.student_id,
+        template=TEMPLATE,
+        issue_date=datetime(2026, 7, 15),
+        batch_id=batch.batch_id,
+    )
+
+    response = asyncio.run(
+        request_response("DELETE", f"/api/admin/certificate-batches/{batch.batch_id}")
+    )
+
+    assert response.status_code == 409
+    assert db_session.get(CertificateBatch, batch.batch_id) is not None
+
+
+def test_admin_reissues_revoked_certificate(db_session) -> None:
+    student = Student(student_no="S20260010", student_name="Reissue Student")
+    db_session.add(student)
+    db_session.commit()
+    certificate = certificate_service.generate_certificate(
+        db_session,
+        student_id=student.student_id,
+        template=TEMPLATE,
+        issue_date=datetime(2026, 7, 14),
+    )
+    asyncio.run(
+        request_json(
+            "POST",
+            f"/api/admin/certificates/{certificate.certificate_no}/revoke",
+            json={"reason": "certificate damaged"},
+        )
+    )
+
+    response = asyncio.run(
+        request_response(
+            "POST",
+            f"/api/admin/certificates/{certificate.certificate_id}/reissue",
+            json={"reason": "certificate damaged", "issue_date": "2026-07-15"},
+        )
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["old_certificate"]["status"] == CertificateStatus.REISSUED.value
+    assert data["new_certificate"]["previous_certificate_no"] == certificate.certificate_no
+
+    repeated_response = asyncio.run(
+        request_response(
+            "POST",
+            f"/api/admin/certificates/{certificate.certificate_id}/reissue",
+            json={"reason": "duplicate reissue", "issue_date": "2026-07-16"},
+        )
+    )
+
+    assert repeated_response.status_code == 409
+    assert db_session.query(Certificate).count() == 2
+
+
+def test_admin_rejects_reissuing_certificate_that_is_not_revoked(db_session) -> None:
+    student = Student(student_no="S20260011", student_name="Valid Certificate Student")
+    db_session.add(student)
+    db_session.commit()
+    certificate = certificate_service.generate_certificate(
+        db_session,
+        student_id=student.student_id,
+        template=TEMPLATE,
+        issue_date=datetime(2026, 7, 15),
+    )
+
+    response = asyncio.run(
+        request_response(
+            "POST",
+            f"/api/admin/certificates/{certificate.certificate_id}/reissue",
+            json={"reason": "invalid direct reissue", "issue_date": "2026-07-16"},
+        )
+    )
+
+    assert response.status_code == 409
+    assert db_session.query(Certificate).count() == 1
 
 
 def test_admin_frontend_page_endpoints_are_available(db_session) -> None:

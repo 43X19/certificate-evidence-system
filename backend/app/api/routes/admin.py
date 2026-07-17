@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.responses import ApiResponse
@@ -15,6 +15,7 @@ from app.models.evidence_receipt import EvidenceReceipt
 from app.models.revocation_record import RevocationRecord
 from app.models.student import Student
 from app.services import certificate_service
+from app.api.routes.auth import require_roles
 
 
 router = APIRouter(prefix="/admin")
@@ -140,7 +141,7 @@ DEMO_AUDIT_LOGS: list[dict[str, Any]] = [
 class StudentPayload(BaseModel):
     student_no: str | None = None
     student_name: str | None = None
-    college: str | None = None
+    college: str | None = Field(default=None, max_length=100)
     major: str | None = None
     major_name: str | None = None
     class_name: str | None = None
@@ -237,7 +238,7 @@ def _student_record(student: Student) -> dict[str, Any]:
         "student_id": student.student_id,
         "student_no": student.student_no,
         "student_name": student.student_name,
-        "college": "示范学院",
+        "college": student.college or "",
         "major": student.major_name or "",
         "class_name": student.class_name or "",
         "phone": "",
@@ -468,6 +469,7 @@ def create_student(payload: StudentPayload, db: Session = Depends(get_db)) -> Ap
     student = Student(
         student_no=payload.student_no,
         student_name=payload.student_name,
+        college=payload.college,
         class_name=payload.class_name,
         major_name=payload.major_name or payload.major,
     )
@@ -487,6 +489,8 @@ def update_student(student_id: int, payload: StudentPayload,
         student.student_no = payload.student_no
     if payload.student_name is not None:
         student.student_name = payload.student_name
+    if payload.college is not None:
+        student.college = payload.college
     if payload.class_name is not None:
         student.class_name = payload.class_name
     if payload.major is not None or payload.major_name is not None:
@@ -497,10 +501,23 @@ def update_student(student_id: int, payload: StudentPayload,
 
 
 @router.delete("/students/{student_id}")
-def delete_student(student_id: int, db: Session = Depends(get_db)) -> ApiResponse[dict[str, Any]]:
+def delete_student(
+    student_id: int,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_roles("ADMIN", "TEACHER")),
+) -> ApiResponse[dict[str, Any]]:
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="student not found")
+    certificate_count = db.query(Certificate).filter(Certificate.student_id == student_id).count()
+    if certificate_count:
+        raise HTTPException(status_code=409, detail="该学生已有证书记录，不能删除")
+
+    for batch in db.query(CertificateBatch).all():
+        student_ids = batch.student_ids or []
+        if student_id in student_ids:
+            batch.student_ids = [item for item in student_ids if item != student_id]
+
     db.delete(student)
     db.commit()
     return ApiResponse.success({"deleted": True})
@@ -566,6 +583,10 @@ def delete_template(template_id: int, db: Session = Depends(get_db)) -> ApiRespo
     template = db.get(CertificateTemplate, template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="template not found")
+    certificate_count = db.query(Certificate).filter(Certificate.template_id == template_id).count()
+    batch_count = db.query(CertificateBatch).filter(CertificateBatch.template_id == template_id).count()
+    if certificate_count or batch_count:
+        raise HTTPException(status_code=409, detail="该模板已被证书或批次使用，不能删除")
     db.delete(template)
     db.commit()
     return ApiResponse.success({"deleted": True})
@@ -614,6 +635,9 @@ def delete_batch(batch_id: int, db: Session = Depends(get_db)) -> ApiResponse[di
     batch = db.get(CertificateBatch, batch_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="batch not found")
+    certificate_count = db.query(Certificate).filter(Certificate.batch_id == batch_id).count()
+    if certificate_count:
+        raise HTTPException(status_code=409, detail="该批次已有证书记录，不能删除")
     db.delete(batch)
     db.commit()
     return ApiResponse.success({"deleted": True})
@@ -732,6 +756,8 @@ def reissue_certificate(certificate_id: int, payload: ReissuePayload,
     old_certificate = db.get(Certificate, certificate_id)
     if old_certificate is None:
         raise HTTPException(status_code=404, detail="certificate not found")
+    if old_certificate.status != CertificateStatus.REVOKED.value:
+        raise HTTPException(status_code=409, detail="仅已撤销证书可以补发")
 
     new_certificate = certificate_service.generate_certificate(
         db,
@@ -781,7 +807,7 @@ def delete_certificate(certificate_id: int, db: Session = Depends(get_db)) -> Ap
         db.delete(certificate)
         db.commit()
         return ApiResponse.success({"deleted": True})
-    return ApiResponse.success({"deleted": False, "message": "issued certificates are kept for audit"})
+    raise HTTPException(status_code=409, detail="已签发证书为保证审计完整性不能删除")
 
 
 @router.get("/evidence/receipts")
