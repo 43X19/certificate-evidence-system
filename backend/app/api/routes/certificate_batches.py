@@ -18,6 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.api.routes.auth import require_admin_access
 from app.core.responses import ApiResponse
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
@@ -36,7 +37,7 @@ from app.schemas.batch import (
 )
 from app.services import certificate_service, chain_service, merkle_service
 
-router = APIRouter(prefix="/admin/batches")
+router = APIRouter(prefix="/admin/batches", dependencies=[Depends(require_admin_access)])
 logger = logging.getLogger(__name__)
 
 

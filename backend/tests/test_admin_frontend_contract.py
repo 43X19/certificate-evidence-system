@@ -7,6 +7,7 @@ from app.main import app
 from app.models.certificate import Certificate, CertificateStatus
 from app.models.certificate_batch import CertificateBatch
 from app.models.certificate_template import CertificateTemplate
+from app.models.revocation_record import RevocationRecord
 from app.models.student import Student
 from app.services import certificate_service
 
@@ -42,6 +43,50 @@ def test_admin_login_matches_frontend_contract() -> None:
     assert data["code"] == 0
     assert data["data"]["token"]
     assert data["data"]["role"] == "ADMIN"
+
+
+def test_admin_role_matrix_protects_reads_and_writes(db_session) -> None:
+    unauthenticated_read = asyncio.run(
+        request_response("GET", "/api/admin/students", headers={})
+    )
+    auditor_read = asyncio.run(
+        request_response(
+            "GET",
+            "/api/admin/students",
+            headers={"Authorization": "Bearer demo-auditor-token"},
+        )
+    )
+    unauthenticated_write = asyncio.run(
+        request_response(
+            "POST",
+            "/api/admin/students",
+            headers={},
+            json={"student_no": "S-AUTH-001", "student_name": "Unauthorized"},
+        )
+    )
+    auditor_write = asyncio.run(
+        request_response(
+            "POST",
+            "/api/admin/students",
+            headers={"Authorization": "Bearer demo-auditor-token"},
+            json={"student_no": "S-AUTH-002", "student_name": "Auditor"},
+        )
+    )
+    teacher_write = asyncio.run(
+        request_response(
+            "POST",
+            "/api/admin/students",
+            headers={"Authorization": "Bearer demo-teacher-token"},
+            json={"student_no": "S-AUTH-003", "student_name": "Teacher"},
+        )
+    )
+
+    assert unauthenticated_read.status_code == 401
+    assert auditor_read.status_code == 200
+    assert unauthenticated_write.status_code == 401
+    assert auditor_write.status_code == 403
+    assert teacher_write.status_code == 200
+    assert db_session.query(Student).filter(Student.student_no.like("S-AUTH-%")).count() == 1
 
 
 def test_admin_students_returns_page_result(db_session) -> None:
@@ -421,3 +466,17 @@ def test_admin_revoke_accepts_certificate_no_from_frontend(db_session) -> None:
 
     assert data["data"]["certificate_no"] == certificate.certificate_no
     assert data["data"]["status"] == "REVOKED"
+
+    repeated = asyncio.run(
+        request_response(
+            "POST",
+            f"/api/admin/certificates/{certificate.certificate_no}/revoke",
+            json={"reason": "duplicate revoke"},
+        )
+    )
+
+    assert repeated.status_code == 409
+    assert db_session.query(RevocationRecord).filter_by(
+        certificate_id=certificate.certificate_id,
+        action_type="REVOKE",
+    ).count() == 1

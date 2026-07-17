@@ -16,28 +16,62 @@ from app.models.certificate_template import CertificateTemplate
 from app.models.student import Student
 
 
-async def _post_json(path: str, payload: dict | None = None) -> httpx.Response:
+async def _post_json(
+    path: str,
+    payload: dict | None = None,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
     transport = httpx.ASGITransport(app=app)
+    if headers is None:
+        headers = {"Authorization": "Bearer demo-admin-token"}
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        return await client.post(path, json=payload)
+        return await client.post(path, json=payload, headers=headers)
 
 
 async def _get_json(path: str) -> httpx.Response:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        return await client.get(path)
+        return await client.get(path, headers={"Authorization": "Bearer demo-admin-token"})
 
 
 async def _put_json(path: str, payload: dict | None = None) -> httpx.Response:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        return await client.put(path, json=payload)
+        return await client.put(
+            path,
+            json=payload,
+            headers={"Authorization": "Bearer demo-admin-token"},
+        )
 
 
 async def _delete_json(path: str) -> httpx.Response:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        return await client.delete(path)
+        return await client.delete(path, headers={"Authorization": "Bearer demo-admin-token"})
+
+
+def test_batch_routes_require_write_role(db_session) -> None:
+    payload = {"batch_name": "权限测试批次", "student_ids": []}
+
+    unauthenticated = asyncio.run(_post_json("/api/admin/batches", payload, headers={}))
+    auditor = asyncio.run(
+        _post_json(
+            "/api/admin/batches",
+            payload,
+            headers={"Authorization": "Bearer demo-auditor-token"},
+        )
+    )
+    teacher = asyncio.run(
+        _post_json(
+            "/api/admin/batches",
+            payload,
+            headers={"Authorization": "Bearer demo-teacher-token"},
+        )
+    )
+
+    assert unauthenticated.status_code == 401
+    assert auditor.status_code == 403
+    assert teacher.status_code == 200
 
 
 def test_create_batch_stores_student_ids(db_session) -> None:

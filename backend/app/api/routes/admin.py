@@ -15,10 +15,10 @@ from app.models.evidence_receipt import EvidenceReceipt
 from app.models.revocation_record import RevocationRecord
 from app.models.student import Student
 from app.services import certificate_service
-from app.api.routes.auth import require_roles
+from app.api.routes.auth import require_admin_access
 
 
-router = APIRouter(prefix="/admin")
+router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin_access)])
 
 
 DEMO_PROJECTS: list[dict[str, Any]] = [
@@ -504,7 +504,6 @@ def update_student(student_id: int, payload: StudentPayload,
 def delete_student(
     student_id: int,
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(require_roles("ADMIN", "TEACHER")),
 ) -> ApiResponse[dict[str, Any]]:
     student = db.get(Student, student_id)
     if student is None:
@@ -727,6 +726,11 @@ def revoke_certificate(certificate_identifier: str, payload: RevokePayload,
     certificate = _get_certificate_by_identifier(db, certificate_identifier)
     if certificate is None:
         raise HTTPException(status_code=404, detail="certificate not found")
+    if certificate.status != CertificateStatus.VALID.value:
+        raise HTTPException(
+            status_code=409,
+            detail=f"仅有效证书可以撤销，当前状态：{certificate.status}",
+        )
     certificate.status = CertificateStatus.REVOKED.value
     db.add(
         RevocationRecord(
