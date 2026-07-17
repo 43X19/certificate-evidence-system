@@ -14,6 +14,7 @@ from app.api.routes.certificate_batches import _load_template_dict
 from app.main import app
 from app.models.certificate import Certificate
 from app.models.certificate_template import CertificateTemplate
+from app.models.project import Project
 from app.models.student import Student
 
 
@@ -254,6 +255,53 @@ def test_generate_batch_accepts_frontend_student_ids_body(db_session) -> None:
     assert len(evidence_data["receipt_ids"]) == 1
     assert evidence_data["evidenced"] == 1
     assert evidence_data["newly_evidenced"] == 0
+
+
+def test_generate_batch_uses_selected_persisted_project(db_session) -> None:
+    student = Student(student_no="2023499", student_name="Project Student")
+    project = Project(
+        project_name="Selected Project",
+        teacher_name="Project Teacher",
+        status="ACTIVE",
+    )
+    template = CertificateTemplate(
+        template_name="Project Template",
+        template_code="TPL-PROJECT-SELECTED",
+        institution_name="Project Institution",
+        content='{"project_name":"Template Default Project"}',
+        status="ACTIVE",
+    )
+    db_session.add_all([student, project, template])
+    db_session.commit()
+
+    batch_id = asyncio.run(
+        _post_json(
+            "/api/admin/batches",
+            {"batch_name": "Project Batch", "student_ids": []},
+        )
+    ).json()["data"]["batch_id"]
+
+    response = asyncio.run(
+        _post_json(
+            f"/api/admin/batches/{batch_id}/generate",
+            {
+                "project_id": project.project_id,
+                "template_id": template.template_id,
+                "student_ids": [student.student_id],
+                "issue_date": "2026-07-17",
+            },
+        )
+    )
+
+    assert response.status_code == 200
+    certificate = db_session.query(Certificate).one()
+    assert certificate.project_name == "Selected Project"
+    assert certificate.institution_name == "Project Institution"
+
+    batch_list = asyncio.run(_get_json("/api/admin/batches"))
+    batch_data = batch_list.json()["data"]["records"][0]
+    assert batch_data["project_id"] == project.project_id
+    assert batch_data["project_name"] == "Selected Project"
 
 
 def test_generate_batch_reports_failure_for_missing_student_without_blocking_others(db_session) -> None:

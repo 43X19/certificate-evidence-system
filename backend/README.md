@@ -40,6 +40,8 @@
 设置 `PUBLIC_VERIFY_BASE_URL=http://<局域网IP>:5173/public/verify`，以前端 `--host 0.0.0.0` 方式启动并重启 FastAPI 后
 重新生成演示证书；不要把局域网地址或 `.env` 提交到仓库。已经生成的旧二维码不会自动改写，需要重新生成证书后才能进入新验真页面。
 
+跨电脑运行前端时，可在前端未提交的 `.env` 中设置 `VITE_PROXY_TARGET=http://<后端电脑IP>:8000`，并在后端未提交的 `.env` 中把前端来源加入 `CORS_ALLOWED_ORIGINS`。只允许明确的 `http/https` 来源，不使用 `*`，也不在仓库中保存真实 IP。联调结束后恢复 FastAPI 的 `127.0.0.1` 监听。
+
 Swagger 接口文档地址：
 
 ```text
@@ -55,7 +57,8 @@ http://127.0.0.1:8000/docs
 ```
 
 如果本机以前已经创建过旧表，需要补齐业务表新增字段（包括 `students.college`、
-`certificate_templates.institution_name`）和 Merkle 表，可执行：
+`projects`、`certificate_batches.project_id`、`certificate_templates.institution_name/updated_at`
+和 `certificates.institution_name`）和 Merkle 表，可执行：
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.upgrade_certificate_schema
@@ -73,6 +76,7 @@ ENABLE_DEMO_DATA=true
 
 当前表结构草案：
 
+- `projects`
 - `students`
 - `certificates`
 - `certificate_templates`
@@ -97,6 +101,7 @@ ENABLE_DEMO_DATA=true
 - `POST /api/verification/{certificate_no}/file`
 - `POST /api/auth/login`
 - `GET /api/admin/dashboard/statistics`
+- `GET/POST/PUT/DELETE /api/admin/projects`
 - `GET /api/admin/students`
 - `GET /api/admin/templates`
 - `GET/POST/PUT/DELETE /api/admin/batches`
@@ -132,7 +137,7 @@ ENABLE_DEMO_DATA=true
 当前测试结果：
 
 ```text
-89 passed
+99 passed
 ```
 
 ## 管理端权限

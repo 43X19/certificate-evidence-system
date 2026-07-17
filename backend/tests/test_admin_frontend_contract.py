@@ -185,7 +185,10 @@ def test_admin_template_persists_configured_issuer_and_content(db_session) -> No
 
     listed = asyncio.run(request_json("GET", "/api/admin/templates"))["data"]["records"]
     assert listed[0]["issuer"] == "计算机学院"
-    assert db_session.get(CertificateTemplate, created["template_id"]).institution_name == "计算机学院"
+    template_row = db_session.get(CertificateTemplate, created["template_id"])
+    assert template_row.institution_name == "计算机学院"
+    template_row.updated_at = datetime(2026, 1, 1)
+    db_session.commit()
 
     updated = asyncio.run(
         request_json(
@@ -195,6 +198,75 @@ def test_admin_template_persists_configured_issuer_and_content(db_session) -> No
         )
     )["data"]
     assert updated["issuer"] == "信息工程学院"
+    assert updated["updated_at"] != "2026-01-01 00:00:00"
+
+
+def test_admin_template_enabled_filter_accepts_frontend_status(db_session) -> None:
+    db_session.add_all(
+        [
+            CertificateTemplate(
+                template_name="Enabled Template",
+                template_code="TPL-STATUS-ACTIVE",
+                institution_name="Test Institution",
+                status="ACTIVE",
+            ),
+            CertificateTemplate(
+                template_name="Disabled Template",
+                template_code="TPL-STATUS-DISABLED",
+                institution_name="Test Institution",
+                status="DISABLED",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    enabled = asyncio.run(
+        request_json("GET", "/api/admin/templates?current=1&size=10&status=ENABLED")
+    )["data"]
+
+    assert enabled["total"] == 1
+    assert enabled["records"][0]["status"] == "ACTIVE"
+
+
+def test_admin_projects_are_persisted_and_validated(db_session) -> None:
+    created = asyncio.run(
+        request_json(
+            "POST",
+            "/api/admin/projects",
+            json={
+                "name": "Certificate Evidence Project",
+                "teacher": "Training Teacher",
+                "start_date": "2026-07-01",
+                "end_date": "2026-07-17",
+                "status": "ACTIVE",
+            },
+        )
+    )["data"]
+
+    listed = asyncio.run(request_json("GET", "/api/admin/projects"))["data"]
+    assert listed["total"] == 1
+    assert listed["records"][0]["id"] == created["id"]
+
+    updated = asyncio.run(
+        request_json(
+            "PUT",
+            f"/api/admin/projects/{created['id']}",
+            json={"status": "COMPLETED"},
+        )
+    )["data"]
+    assert updated["status"] == "COMPLETED"
+
+    invalid = asyncio.run(
+        request_response(
+            "PUT",
+            f"/api/admin/projects/{created['id']}",
+            json={"end_date": "2026-06-30"},
+        )
+    )
+    assert invalid.status_code == 422
+
+    unchanged = asyncio.run(request_json("GET", "/api/admin/projects"))["data"]["records"][0]
+    assert unchanged["end_date"] == "2026-07-17"
 
 
 def test_admin_deletes_unissued_student_and_removes_batch_assignment(db_session) -> None:
