@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     database_url: str | None = None
     jwt_secret: str | None = None
+    auth_access_token_minutes: int = 120
+    enable_demo_auth: bool = False
     public_verify_base_url: str = "http://127.0.0.1:5173/public/verify"
     enable_demo_data: bool = False
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"

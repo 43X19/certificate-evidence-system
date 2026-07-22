@@ -45,7 +45,26 @@ caddy validate --config /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-当前项目仍使用演示账号和演示令牌。`Caddyfile.example` 默认只公开公共验真页面、静态资源和公共验真 API，其他路径返回 `404`。管理端应通过 SSH 隧道访问；若以后需要公网开放管理端，必须先完成正式鉴权或接入独立访问网关。
+`Caddyfile.example` 默认只公开公共验真页面、静态资源和公共验真 API，其他路径返回 `404`。在认证版本尚未完成服务器验收前，管理端仍应通过 SSH 隧道访问；不得为方便测试直接扩大公共验真域名的白名单。
+
+## 项目组协作后台
+
+认证版本发布后，`verify.lotusrain.net` 仍只提供公共验真；后台使用独立的
+`admin.verify.lotusrain.net`。启用前必须先在 DNS 创建该子域的 A/AAAA 记录并指向本服务器，
+然后将 `Caddyfile.example` 的两个站点块导入 Caddy。不要为方便测试而在公共验真域名白名单中
+增加 `/login`、`/student` 或 `/api/admin/*`。
+
+认证迁移只新增 `users`、`invitations` 和 `auth_sessions` 表。首次部署后，在服务器交互式创建
+首个管理员，命令会安全读取密码，不要通过命令参数、环境变量、聊天记录或仓库传递密码：
+
+```bash
+cd /opt/certificate-evidence/current/deploy
+docker compose exec backend python -m scripts.create_admin
+```
+
+管理员登录管理后台后可创建一次性教师邀请链接。邀请码原文只会在创建时展示一次，应通过可信
+渠道发送；禁用账号会撤销该账号所有有效登录。上线前必须先备份数据库、输出目录和 Caddy 配置，
+并完成未登录 `401`、越权 `403`、邀请码重复使用失败、禁用账号令牌失效和教师签发证书的验收。
 
 公共验真 API 默认按来源 IP 限制为每分钟 30 个请求、允许 10 个突发请求，并将上传文件限制为 8 MB。公网运行时仍需定期检查审计日志增长情况。
 

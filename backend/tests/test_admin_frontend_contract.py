@@ -82,10 +82,18 @@ def test_admin_role_matrix_protects_reads_and_writes(db_session) -> None:
     )
 
     assert unauthenticated_read.status_code == 401
-    assert auditor_read.status_code == 200
+    assert auditor_read.status_code == 403
     assert unauthenticated_write.status_code == 401
     assert auditor_write.status_code == 403
     assert teacher_write.status_code == 200
+    auditor_evidence = asyncio.run(
+        request_response(
+            "GET",
+            "/api/admin/evidence/integrity",
+            headers={"Authorization": "Bearer demo-auditor-token"},
+        )
+    )
+    assert auditor_evidence.status_code == 200
     assert db_session.query(Student).filter(Student.student_no.like("S-AUTH-%")).count() == 1
 
 

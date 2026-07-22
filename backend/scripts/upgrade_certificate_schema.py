@@ -1,17 +1,25 @@
-from sqlalchemy import inspect, text
+from sqlalchemy import Index, MetaData, Table, func, inspect, select, text
+from sqlalchemy.engine import Engine
 
 from app.db.session import engine
 from app.models.credential_root import CredentialRoot
 from app.models.merkle_tree_node import MerkleTreeNode
 from app.models.project import Project
+from app.models.user import AuthSession, Invitation, User
 
 
 class SchemaUpgradeConflictError(RuntimeError):
     pass
 
 
+def _database_engine() -> Engine:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not configured")
+    return engine
+
+
 def _column_names(table_name: str) -> set[str]:
-    inspector = inspect(engine)
+    inspector = inspect(_database_engine())
     if table_name not in inspector.get_table_names():
         return set()
     return {column["name"] for column in inspector.get_columns(table_name)}
@@ -20,28 +28,34 @@ def _column_names(table_name: str) -> set[str]:
 def _add_column_if_missing(table_name: str, column_name: str, ddl: str) -> None:
     if column_name in _column_names(table_name):
         return
-    with engine.begin() as connection:
+    with _database_engine().begin() as connection:
         connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {ddl}"))
     print(f"added {table_name}.{column_name}")
 
 
 def _create_merkle_tables_if_missing() -> None:
-    CredentialRoot.__table__.create(bind=engine, checkfirst=True)
-    MerkleTreeNode.__table__.create(bind=engine, checkfirst=True)
+    CredentialRoot.__table__.create(bind=_database_engine(), checkfirst=True)  # type: ignore[attr-defined]
+    MerkleTreeNode.__table__.create(bind=_database_engine(), checkfirst=True)  # type: ignore[attr-defined]
 
 
 def _create_project_table_if_missing() -> None:
-    Project.__table__.create(bind=engine, checkfirst=True)
+    Project.__table__.create(bind=_database_engine(), checkfirst=True)  # type: ignore[attr-defined]
+
+
+def _create_auth_tables_if_missing() -> None:
+    User.__table__.create(bind=_database_engine(), checkfirst=True)  # type: ignore[attr-defined]
+    Invitation.__table__.create(bind=_database_engine(), checkfirst=True)  # type: ignore[attr-defined]
+    AuthSession.__table__.create(bind=_database_engine(), checkfirst=True)  # type: ignore[attr-defined]
 
 
 def _unique_column_sets(table_name: str) -> set[tuple[str, ...]]:
-    inspector = inspect(engine)
+    inspector = inspect(_database_engine())
     constraints = {
-        tuple(item["column_names"])
+        tuple(str(column_name) for column_name in item["column_names"] if column_name)
         for item in inspector.get_unique_constraints(table_name)
     }
     indexes = {
-        tuple(item["column_names"])
+        tuple(str(column_name) for column_name in item["column_names"] if column_name)
         for item in inspector.get_indexes(table_name)
         if item.get("unique")
     }
@@ -55,24 +69,24 @@ def _create_unique_index_if_missing(
 ) -> None:
     if column_names in _unique_column_sets(table_name):
         return
-    columns_sql = ", ".join(column_names)
-    with engine.begin() as connection:
+    table = Table(table_name, MetaData(), autoload_with=_database_engine())
+    columns = [table.c[column_name] for column_name in column_names]
+    columns_label = ", ".join(column_names)
+    with _database_engine().begin() as connection:
         duplicates = connection.execute(
-            text(
-                f"SELECT {columns_sql}, COUNT(*) AS duplicate_count "
-                f"FROM {table_name} GROUP BY {columns_sql} "
-                "HAVING COUNT(*) > 1 LIMIT 5"
-            )
+            select(*columns, func.count().label("duplicate_count"))
+            .select_from(table)
+            .group_by(*columns)
+            .having(func.count() > 1)
+            .limit(5)
         ).all()
         if duplicates:
             raise SchemaUpgradeConflictError(
                 f"cannot add {index_name}: {table_name} has duplicate keys "
-                f"for ({columns_sql}): {duplicates}; no rows were deleted, "
+                f"for ({columns_label}): {duplicates}; no rows were deleted, "
                 "resolve the historical duplicates and rerun the upgrade"
             )
-        connection.execute(
-            text(f"CREATE UNIQUE INDEX {index_name} ON {table_name} ({columns_sql})")
-        )
+        Index(index_name, *columns, unique=True).create(bind=connection)
     print(f"added unique index {index_name}")
 
 
@@ -82,6 +96,7 @@ def main() -> None:
         return
 
     _create_project_table_if_missing()
+    _create_auth_tables_if_missing()
 
     if _column_names("certificates"):
         _add_column_if_missing(
@@ -177,7 +192,7 @@ def main() -> None:
         )
 
     if _column_names("certificates"):
-        with engine.begin() as connection:
+        with _database_engine().begin() as connection:
             connection.execute(
                 text("UPDATE certificates SET updated_at = created_at WHERE updated_at IS NULL")
             )
@@ -196,7 +211,7 @@ def main() -> None:
                 )
 
     if _column_names("certificate_templates"):
-        with engine.begin() as connection:
+        with _database_engine().begin() as connection:
             connection.execute(
                 text(
                     "UPDATE certificate_templates SET updated_at = created_at "

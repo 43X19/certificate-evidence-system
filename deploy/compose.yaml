@@ -32,6 +32,7 @@ services:
       APP_ENV: production
       DATABASE_URL: mysql+pymysql://certificate:${MYSQL_PASSWORD}@db:3306/certificate_evidence
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      AUTH_ACCESS_TOKEN_MINUTES: ${AUTH_ACCESS_TOKEN_MINUTES:-120}
       PUBLIC_VERIFY_BASE_URL: ${PUBLIC_VERIFY_BASE_URL:?PUBLIC_VERIFY_BASE_URL is required}
     depends_on:
       db:

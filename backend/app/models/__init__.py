@@ -8,6 +8,7 @@ from app.models.merkle_tree_node import MerkleTreeNode
 from app.models.project import Project
 from app.models.revocation_record import RevocationRecord
 from app.models.student import Student
+from app.models.user import AuthSession, Invitation, User
 
 
 __all__ = [
@@ -21,4 +22,7 @@ __all__ = [
     "Project",
     "RevocationRecord",
     "Student",
+    "AuthSession",
+    "Invitation",
+    "User",
 ]

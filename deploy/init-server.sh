@@ -23,6 +23,7 @@ find "$release_dir" -type f -exec chmod 0644 {} +
 chmod 0755 "$release_dir/deploy/init-server.sh"
 chmod 0755 "$release_dir/deploy/backup-server.sh"
 chmod 0755 "$release_dir/deploy/restore-server.sh"
+chmod 0755 "$release_dir/backend/scripts/create_admin.py"
 
 if [[ ! -f "$shared_dir/.env" ]]; then
   cp "$release_dir/deploy/.env.example" "$shared_dir/.env"

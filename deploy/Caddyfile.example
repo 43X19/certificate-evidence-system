@@ -17,3 +17,32 @@ verify.lotusrain.net {
 		-Server
 	}
 }
+
+# 管理后台只在完成账号初始化、全量接口鉴权和 DNS 验收后启用。
+admin.verify.lotusrain.net {
+	encode zstd gzip
+
+	@admin_api {
+		path /api/auth/* /api/admin/*
+	}
+
+	handle @admin_api {
+		reverse_proxy 127.0.0.1:18080
+	}
+
+	@other_api {
+		path /api/*
+	}
+
+	handle @other_api {
+		respond "Not Found" 404
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:18080
+	}
+
+	header {
+		-Server
+	}
+}

@@ -25,6 +25,7 @@ logs/
 tmp/
 temp/
 .cache/
+.playwright-cli/
 
 # Java / Spring Boot
 /target/
