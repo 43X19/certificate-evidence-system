@@ -101,3 +101,51 @@ def test_project_bound_by_template_cannot_be_deleted(db_session) -> None:
     deleted = asyncio.run(_request("DELETE", f"/api/admin/projects/{project.project_id}"))
     assert deleted.status_code == 409
     assert "证书模板绑定" in deleted.json()["message"]
+
+
+def test_template_only_batch_creation_then_generation_matches_admin_flow(db_session) -> None:
+    project = Project(project_name="模板签发项目", teacher_name="教师", status="ACTIVE")
+    student = Student(student_no="20260002", student_name="签发学生")
+    db_session.add_all([project, student])
+    db_session.commit()
+
+    template_response = asyncio.run(
+        _request(
+            "POST",
+            "/api/admin/templates",
+            {
+                "template_name": "按模板创建批次",
+                "institution_name": "示范学院",
+                "content_config": {"project_id": project.project_id},
+            },
+        )
+    )
+    template = template_response.json()["data"]
+
+    created = asyncio.run(
+        _request("POST", "/api/admin/batches", {"template_id": template["template_id"]})
+    )
+    assert created.status_code == 200
+    batch = created.json()["data"]
+    assert batch["project_id"] == project.project_id
+    assert batch["project_name"] == project.project_name
+    assert batch["student_count"] == 0
+    assert batch["batch_name"] == "按模板创建批次证书批次"
+
+    generated = asyncio.run(
+        _request(
+            "POST",
+            f"/api/admin/batches/{batch['batch_id']}/generate",
+            {
+                "project_id": project.project_id,
+                "template_id": template["template_id"],
+                "student_ids": [student.student_id],
+                "issue_date": "2026-07-23",
+            },
+        )
+    )
+    assert generated.status_code == 200
+    assert generated.json()["data"]["generated_count"] == 1
+
+    listed = asyncio.run(_request("GET", "/api/admin/batches?current=1&size=10"))
+    assert listed.json()["data"]["records"][0]["student_count"] == 1

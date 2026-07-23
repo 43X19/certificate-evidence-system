@@ -2,7 +2,6 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
-import StatusTag from '@/components/StatusTag.vue'
 import type { Batch, IssueResult, MerkleRootResult, Student, Template } from '@/types'
 import { createBatch, deleteBatch, generateMerkleRoot, getBatches, getMerkleRoot } from '@/api/batches'
 import { evidenceBatch, issueCertificates } from '@/api/certificates'
@@ -15,22 +14,20 @@ const students=ref<Student[]>([]),templates=ref<Template[]>([])
 const rootLoading=ref<number>(),rootQueryLoading=ref<number>(),roots=ref<Record<number,MerkleRootResult>>({}),evidenceLoading=ref<number>()
 const generateLoading=ref(false),issueResult=ref<IssueResult>()
 const query=reactive({current:1,size:10,keyword:'',status:''})
-const form=reactive({batch_name:'',template_id:0,student_ids:[] as number[]})
-const generateForm=reactive({issue_date:''})
+const form=reactive({template_id:0})
+const generateForm=reactive({student_ids:[] as number[],issue_date:''})
 
 async function load(){loading.value=true;try{const p=await getBatches(query);rows.value=p.records;total.value=p.total;await Promise.allSettled(p.records.map(async row=>{const result=await getMerkleRoot(row.batch_id);if(result)roots.value[row.batch_id]=result;else delete roots.value[row.batch_id]}))}catch{rows.value=[]}finally{loading.value=false}}
-function reset(){query.keyword='';query.status='';query.current=1;load()}
+function reset(){query.keyword='';query.current=1;load()}
 async function ensureTemplates(){if(!templates.value.length){const page=await getTemplates({current:1,size:100,keyword:'',status:''});templates.value=page.records}}
-async function openCreate(){Object.assign(form,{batch_name:'',template_id:0,student_ids:[]});await ensureTemplates();if(!students.value.length){const page=await getStudents({current:1,size:100,keyword:'',status:''});students.value=page.records}dialog.value=true}
+async function openCreate(){form.template_id=0;await ensureTemplates();dialog.value=true}
 function templateName(templateId:number){return templates.value.find(item=>item.template_id===templateId)?.name||`模板 #${templateId}`}
-function selectedTemplate(){return templates.value.find(item=>item.template_id===form.template_id)}
-async function save(){const template=selectedTemplate();if(!form.batch_name.trim())return ElMessage.warning('请填写批次名称');if(!template?.project_id)return ElMessage.warning('请选择已绑定实训项目的证书模板');if(!form.student_ids.length)return ElMessage.warning('请选择至少一名学生');await createBatch({batch_name:form.batch_name.trim(),project_id:template.project_id,project_name:template.project_name,template_id:form.template_id,student_ids:form.student_ids});ElMessage.success('批次创建成功，批次编号由系统自动生成');dialog.value=false;load()}
+async function save(){if(!form.template_id)return ElMessage.warning('请选择证书模板');await createBatch({template_id:form.template_id});ElMessage.success('批次创建成功，批次编号由系统自动生成');dialog.value=false;load()}
 async function remove(row:Batch){await ElMessageBox.confirm(`确认删除批次“${row.batch_no}”吗？`,'删除批次',{type:'warning'});await deleteBatch(row.batch_id);ElMessage.success('删除成功');load()}
 function canEvidence(row:Batch){return row.generated>0&&row.evidenced<row.generated}
 async function evidence(row:Batch){if(evidenceLoading.value||!canEvidence(row))return;evidenceLoading.value=row.batch_id;try{await evidenceBatch(row.batch_id);ElMessage.success('批量存证完成');await load()}finally{evidenceLoading.value=undefined}}
-async function openGenerate(row:Batch){current.value=row;generateForm.issue_date='';issueResult.value=undefined;await ensureTemplates();generateDrawer.value=true}
-async function generateCertificates(){if(generateLoading.value||!current.value)return;if(!generateForm.issue_date)return ElMessage.warning('请选择签发日期');generateLoading.value=true;try{issueResult.value=await issueCertificates({batch_id:current.value.batch_id,issue_date:generateForm.issue_date});ElMessage.success(`证书生成完成：成功 ${issueResult.value.success_count} 张，失败 ${issueResult.value.failed_count} 张`);await load()}finally{generateLoading.value=false}}
-function progressPercent(done:number,total:number){if(!total)return 0;return Math.min(100,Math.max(0,Math.round(done/total*100)))}
+async function openGenerate(row:Batch){current.value=row;generateForm.student_ids=[];generateForm.issue_date='';issueResult.value=undefined;await ensureTemplates();if(!students.value.length){const page=await getStudents({current:1,size:100,keyword:'',status:''});students.value=page.records}generateDrawer.value=true}
+async function generateCertificates(){if(generateLoading.value||!current.value)return;const template=templates.value.find(item=>item.template_id===current.value?.template_id);const projectId=current.value.project_id||template?.project_id||0;if(!projectId)return ElMessage.warning('当前模板尚未绑定实训项目，请先编辑模板');if(!generateForm.student_ids.length||!generateForm.issue_date)return ElMessage.warning('请选择学生和签发日期');generateLoading.value=true;try{issueResult.value=await issueCertificates({project_id:projectId,template_id:current.value.template_id,batch_id:current.value.batch_id,student_ids:generateForm.student_ids,issue_date:generateForm.issue_date});ElMessage.success(`证书生成完成：成功 ${issueResult.value.success_count} 张，失败 ${issueResult.value.failed_count} 张`);await load()}finally{generateLoading.value=false}}
 async function createRoot(row:Batch){if(rootLoading.value)return;rootLoading.value=row.batch_id;try{const existing=await getMerkleRoot(row.batch_id);if(existing){roots.value[row.batch_id]=existing;current.value=row;detail.value=true;ElMessage.info('该批次已生成 Merkle Root，已打开现有结果');return}await ElMessageBox.confirm('生成后 Root 将作为历史事实保存，不能覆盖或删除。确认继续吗？','生成 Merkle Root',{type:'warning'});const result=await generateMerkleRoot(row.batch_id);roots.value[row.batch_id]=result;current.value=row;detail.value=true;ElMessage.success(result.tx_hash?'Merkle Root 已生成并写入测试链':'Merkle Root 已生成，本次未返回链上交易哈希')}finally{rootLoading.value=undefined}}
 async function show(row:Batch){current.value=row;detail.value=true;await ensureTemplates();rootQueryLoading.value=row.batch_id;try{const result=await getMerkleRoot(row.batch_id);if(result)roots.value[row.batch_id]=result;else delete roots.value[row.batch_id]}finally{if(rootQueryLoading.value===row.batch_id)rootQueryLoading.value=undefined}}
 function copy(value?:string){if(value){navigator.clipboard.writeText(value);ElMessage.success('已复制')}}
@@ -44,21 +41,15 @@ onMounted(async()=>{await ensureTemplates();await load()})
     </PageHeader>
     <section class="panel">
       <div class="toolbar">
-        <el-input v-model="query.keyword" placeholder="批次编号、名称或项目" clearable style="width:280px"/>
-        <el-select v-model="query.status" placeholder="状态" clearable style="width:150px"><el-option v-for="s in ['DRAFT','IMPORTED','GENERATED','EVIDENCED','COMPLETED','CANCELLED']" :key="s" :label="s" :value="s"/></el-select>
+        <el-input v-model="query.keyword" placeholder="批次编号或项目" clearable style="width:280px"/>
         <el-button type="primary" @click="query.current=1;load()">查询</el-button>
         <el-button @click="reset">重置</el-button>
       </div>
-        <el-table v-loading="loading" :data="rows" empty-text="暂无批次数据">
+      <el-table v-loading="loading" :data="rows" empty-text="暂无批次数据">
         <el-table-column prop="batch_no" label="批次编号" min-width="190"/>
-        <el-table-column prop="batch_name" label="批次名称" min-width="180"/>
         <el-table-column label="证书模板" min-width="190"><template #default="s">{{templateName(s.row.template_id)}}</template></el-table-column>
-        <el-table-column prop="project_name" label="绑定项目" min-width="160"/>
-        <el-table-column prop="student_count" label="学生数" width="80"/>
-        <el-table-column label="生成进度" min-width="120"><template #default="s"><el-progress :percentage="progressPercent(s.row.generated,s.row.student_count)"/></template></el-table-column>
-        <el-table-column label="存证进度" min-width="120"><template #default="s"><el-progress :percentage="progressPercent(s.row.evidenced,s.row.student_count)" color="#059669"/></template></el-table-column>
-        <el-table-column label="状态" width="105"><template #default="s"><StatusTag :value="s.row.status"/></template></el-table-column>
-        <el-table-column label="操作" min-width="390" fixed="right">
+        <el-table-column prop="project_name" label="绑定项目" min-width="180"><template #default="s">{{s.row.project_name||'由模板确定'}}</template></el-table-column>
+        <el-table-column label="操作" min-width="390">
           <template #default="s">
             <el-button link type="primary" @click="show(s.row)">详情</el-button>
             <el-button link type="primary" @click="openGenerate(s.row)">生成证书</el-button>
@@ -72,17 +63,11 @@ onMounted(async()=>{await ensureTemplates();await load()})
     </section>
 
     <el-dialog v-model="dialog" title="创建批次" width="560">
-      <el-alert title="批次编号由系统自动生成。项目随模板带入，学生名单在创建批次时冻结。" type="info" :closable="false" style="margin-bottom:18px"/>
+      <el-alert title="批次编号由系统自动生成，实训项目由证书模板的绑定关系确定。" type="info" :closable="false" style="margin-bottom:18px"/>
       <el-form label-position="top">
-        <el-form-item label="批次名称" required><el-input v-model="form.batch_name" placeholder="如：2026 暑期实训第一批"/></el-form-item>
         <el-form-item label="证书模板" required>
           <el-select v-model="form.template_id" filterable placeholder="请选择已绑定项目的证书模板" style="width:100%">
             <el-option v-for="item in templates" :key="item.template_id" :label="`${item.name}（${item.project_name||'未绑定项目'}）`" :value="item.template_id" :disabled="!item.project_id||!item.enabled"/>
-          </el-select>
-        </el-form-item>
-        <el-form-item label="选择学生" required>
-          <el-select v-model="form.student_ids" multiple filterable collapse-tags style="width:100%">
-            <el-option v-for="student in students" :key="student.student_id" :label="`${student.student_no} ${student.student_name}`" :value="student.student_id"/>
           </el-select>
         </el-form-item>
       </el-form>
@@ -92,7 +77,11 @@ onMounted(async()=>{await ensureTemplates();await load()})
     <el-drawer v-model="generateDrawer" title="生成证书" size="600">
       <el-alert v-if="current" :title="`批次：${current.batch_no}　模板：${templateName(current.template_id)}`" type="info" :closable="false"/>
       <el-form label-position="top" style="margin-top:18px" :disabled="generateLoading">
-        <el-alert title="将按创建批次时选择的学生名单签发，签发时不再覆盖名单。" type="info" :closable="false" style="margin-bottom:18px"/>
+        <el-form-item label="选择学生" required>
+          <el-select v-model="generateForm.student_ids" multiple filterable collapse-tags style="width:100%">
+            <el-option v-for="student in students" :key="student.student_id" :label="`${student.student_no} ${student.student_name}`" :value="student.student_id"/>
+          </el-select>
+        </el-form-item>
         <el-form-item label="签发日期" required><el-date-picker v-model="generateForm.issue_date" type="date" value-format="YYYY-MM-DD" style="width:100%"/></el-form-item>
         <el-button type="primary" style="width:100%" :loading="generateLoading" @click="generateCertificates">{{generateLoading?'正在生成':'生成证书'}}</el-button>
       </el-form>
@@ -104,10 +93,8 @@ onMounted(async()=>{await ensureTemplates();await load()})
     <el-drawer v-model="detail" title="批次详情" size="620">
       <div v-if="current" class="detail-list">
         <div><span>批次编号</span><b>{{current.batch_no}}</b></div>
-        <div><span>批次名称</span><b>{{current.batch_name}}</b></div>
         <div><span>证书模板</span><b>{{templateName(current.template_id)}}</b></div>
-        <div><span>绑定项目</span><b>{{current.project_name||'—'}}</b></div>
-        <div><span>学生数</span><b>{{current.student_count}}</b></div>
+        <div><span>绑定项目</span><b>{{current.project_name||'由模板确定'}}</b></div>
       </div>
       <template v-if="current">
         <h3 class="evidence-title">存证信息（P2）</h3>
@@ -123,3 +110,4 @@ onMounted(async()=>{await ensureTemplates();await load()})
   </div>
 </template>
 <style scoped>.evidence-title{margin:28px 0 14px;border-top:1px solid #edf0f4;padding-top:22px}.root-section{min-height:180px}.root-info dl{margin-top:16px}.root-info dt{font-size:12px;color:#7d8a9d;margin-top:14px}.root-info dd{margin:5px 0 0;font:12px Consolas,monospace;word-break:break-all;cursor:pointer}.root-info dd:last-child{cursor:default}</style>
+

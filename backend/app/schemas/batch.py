@@ -1,9 +1,10 @@
 from pydantic import BaseModel, Field
 
 
-# 按接口规范.md第4.3节"创建证书批次"，创建批次时就要传这批证书发给哪些学生
+# 管理端按模板先创建空批次，学生名单和签发日期在生成证书时确定。
+# 仍兼容旧调用方在创建时直接传批次名称、项目和学生名单。
 class BatchCreate(BaseModel):
-    batch_name: str
+    batch_name: str | None = None
     project_id: int | None = None
     project_name: str | None = None
     template_id: int | None = None
