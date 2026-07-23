@@ -196,6 +196,9 @@ def create_batch(payload: BatchCreate, db: Session = Depends(get_db)) -> ApiResp
     project_name = payload.project_name
     batch_name = payload.batch_name
 
+    if payload.template_id is None and batch_name is None:
+        raise HTTPException(status_code=422, detail="创建批次必须选择证书模板")
+
     # PR #45 的管理端只提交 template_id。项目必须从模板绑定关系推导，避免由
     # 浏览器传入的项目和模板不一致；同时保留旧的完整请求体以兼容历史调用方。
     if payload.template_id is not None and project_id is None and batch_name is None:

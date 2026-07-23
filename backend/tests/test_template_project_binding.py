@@ -149,3 +149,9 @@ def test_template_only_batch_creation_then_generation_matches_admin_flow(db_sess
 
     listed = asyncio.run(_request("GET", "/api/admin/batches?current=1&size=10"))
     assert listed.json()["data"]["records"][0]["student_count"] == 1
+
+
+def test_empty_batch_creation_is_rejected(db_session) -> None:
+    response = asyncio.run(_request("POST", "/api/admin/batches", {}))
+    assert response.status_code == 422
+    assert "证书模板" in response.json()["message"]
