@@ -14,7 +14,7 @@ verify.lotusrain.net {
 	# 经项目负责人明确批准的临时学生演示入口。学生端仍以 student_no 参数
 	# 查询，不是正式登录；仅可使用模拟数据，不能扩大为其他 API 或诊断路径。
 	@student_demo {
-		path /student /student/* /api/student/*
+		path /student /student/* /api/student/certificates /api/student/certificates/*
 	}
 
 	handle @public_verify {
