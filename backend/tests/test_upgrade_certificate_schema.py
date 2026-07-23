@@ -143,6 +143,7 @@ def test_upgrade_adds_college_when_only_students_table_exists(monkeypatch) -> No
     student_columns = {column["name"] for column in inspector.get_columns("students")}
     assert "college" in student_columns
     assert "credential_roots" not in inspector.get_table_names()
+    assert "projects" in inspector.get_table_names()
 
 
 def test_upgrade_adds_student_account_columns_and_unique_index_to_legacy_users(monkeypatch) -> None:
@@ -171,7 +172,18 @@ def test_upgrade_adds_student_account_columns_and_unique_index_to_legacy_users(m
     user_columns = {column["name"] for column in inspector.get_columns("users")}
     assert {"student_id", "must_change_password"} <= user_columns
     assert ("student_id",) in upgrader._unique_column_sets("users")
-    assert "projects" in inspector.get_table_names()
+
+
+def test_unique_student_id_upgrade_allows_multiple_unbound_accounts(monkeypatch) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE users (user_id INTEGER PRIMARY KEY, student_id INTEGER)"))
+        connection.execute(text("INSERT INTO users (user_id, student_id) VALUES (1, NULL), (2, NULL)"))
+
+    monkeypatch.setattr(upgrader, "engine", engine)
+    upgrader._create_unique_index_if_missing("users", "uq_users_student_id", ("student_id",))
+
+    assert ("student_id",) in upgrader._unique_column_sets("users")
 
 
 def test_upgrade_handles_template_table_without_certificate_table(monkeypatch) -> None:

@@ -1,4 +1,4 @@
-from sqlalchemy import Index, MetaData, Table, func, inspect, select, text
+from sqlalchemy import Index, MetaData, Table, and_, func, inspect, select, text
 from sqlalchemy.engine import Engine
 
 from app.db.session import engine
@@ -76,6 +76,9 @@ def _create_unique_index_if_missing(
         duplicates = connection.execute(
             select(*columns, func.count().label("duplicate_count"))
             .select_from(table)
+            # MySQL unique indexes allow multiple rows containing NULL. This
+            # matters for staff accounts whose student_id is intentionally empty.
+            .where(and_(*(column.is_not(None) for column in columns)))
             .group_by(*columns)
             .having(func.count() > 1)
             .limit(5)
