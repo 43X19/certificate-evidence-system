@@ -45,7 +45,7 @@ caddy validate --config /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-`Caddyfile.example` 默认只公开公共验真页面、静态资源和公共验真 API，其他路径返回 `404`。认证版本完成服务器验收后，才可按“项目组协作后台”中的约束启用受限管理入口。学生页和 `/api/student/certificates*` 已纳入受限入口，但后端必须通过 `STUDENT` JWT 和绑定的 `student_id` 决定证书归属。
+`Caddyfile.example` 公开平台根入口 `/`、公共验真页面、静态资源和公共验真 API，其他路径返回 `404`。根入口只提供验真、学生登录和管理登录分流，不改变认证边界。学生页和 `/api/student/certificates*` 已纳入受限入口，但后端必须通过 `STUDENT` JWT 和绑定的 `student_id` 决定证书归属。
 
 ## 项目组协作后台
 

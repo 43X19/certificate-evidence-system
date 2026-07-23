@@ -12,6 +12,7 @@ export function roleHome(role?: Role) {
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: '/', component: () => import('@/views/PlatformEntryView.vue'), meta: { public: true, title: '平台入口' } },
     { path: '/login', component: () => import('@/views/LoginView.vue'), meta: { public: true, title: '登录' } },
     { path: '/student/login', component: () => import('@/views/LoginView.vue'), meta: { public: true, title: '学生登录' } },
     { path: '/register', component: () => import('@/views/RegisterInvitationView.vue'), meta: { public: true, title: '受邀注册' } },

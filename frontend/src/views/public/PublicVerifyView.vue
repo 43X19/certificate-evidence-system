@@ -65,7 +65,7 @@ onMounted(() => {
 <template>
   <div class="verify-page">
     <header class="verify-topbar">
-      <div><b>可信证书验真</b><span>证书编号、扫码链接与 PDF 哈希复验</span></div>
+      <div><b>可信证书验真</b><span>证书编号、扫码链接与 PDF 哈希复验</span></div><el-button text @click="router.push('/')">平台入口</el-button>
     </header>
 
     <main class="verify-main">
