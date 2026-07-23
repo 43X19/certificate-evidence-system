@@ -234,6 +234,13 @@ def change_password(
         raise HTTPException(status_code=400, detail="新密码不能与当前密码相同")
     user.password_hash = PASSWORD_HASH.hash(payload.new_password)
     user.must_change_password = False
+    # An initial password can be used from more than one device. Once it is
+    # replaced, only the session that completed this change may remain active.
+    db.query(AuthSession).filter(
+        AuthSession.user_id == user.user_id,
+        AuthSession.jti != current_user.get("jti"),
+        AuthSession.revoked_at.is_(None),
+    ).update({AuthSession.revoked_at: datetime.utcnow()}, synchronize_session=False)
     db.commit()
     return ApiResponse.success({"password_changed": True})
 

@@ -20,7 +20,7 @@ from openpyxl import load_workbook
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.routes.auth import PASSWORD_HASH, require_admin_access
+from app.api.routes.auth import PASSWORD_HASH, require_admin_access, require_roles
 from app.api.routes.certificate_batches import create_batch_record
 from app.core.responses import ApiResponse
 from app.db.session import get_db
@@ -82,7 +82,7 @@ def _map_headers(header_row: tuple) -> dict[str, int]:
 def provision_student_accounts(
     payload: StudentAccountProvisionRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_admin_access),
+    current_user: dict = Depends(require_roles("ADMIN")),
 ) -> ApiResponse[dict]:
     query = db.query(Student).order_by(Student.student_id.asc())
     requested_ids = set(payload.student_ids)
@@ -142,7 +142,7 @@ def provision_student_accounts(
 def reset_student_password(
     student_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_admin_access),
+    current_user: dict = Depends(require_roles("ADMIN")),
 ) -> ApiResponse[dict]:
     student = db.get(Student, student_id)
     if student is None:

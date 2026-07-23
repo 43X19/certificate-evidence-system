@@ -143,6 +143,34 @@ def test_upgrade_adds_college_when_only_students_table_exists(monkeypatch) -> No
     student_columns = {column["name"] for column in inspector.get_columns("students")}
     assert "college" in student_columns
     assert "credential_roots" not in inspector.get_table_names()
+
+
+def test_upgrade_adds_student_account_columns_and_unique_index_to_legacy_users(monkeypatch) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE students "
+                "(student_id INTEGER PRIMARY KEY, student_no VARCHAR(64), student_name VARCHAR(64))"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE users "
+                "(user_id INTEGER PRIMARY KEY, username VARCHAR(64), display_name VARCHAR(64), "
+                "password_hash VARCHAR(255), role VARCHAR(16), is_active BOOLEAN, "
+                "created_at DATETIME, updated_at DATETIME)"
+            )
+        )
+
+    monkeypatch.setattr(upgrader, "engine", engine)
+    upgrader.main()
+    upgrader.main()
+
+    inspector = inspect(engine)
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
+    assert {"student_id", "must_change_password"} <= user_columns
+    assert ("student_id",) in upgrader._unique_column_sets("users")
     assert "projects" in inspector.get_table_names()
 
 

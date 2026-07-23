@@ -90,6 +90,46 @@ def _create_unique_index_if_missing(
     print(f"added unique index {index_name}")
 
 
+def _create_student_foreign_key_if_missing() -> None:
+    database_engine = _database_engine()
+    if database_engine.dialect.name == "sqlite":
+        # SQLite cannot add a foreign-key constraint through ALTER TABLE. New
+        # SQLite databases receive it from ORM metadata; MySQL uses the DDL below.
+        return
+    inspector = inspect(database_engine)
+    if "users" not in inspector.get_table_names() or "students" not in inspector.get_table_names():
+        return
+    for foreign_key in inspector.get_foreign_keys("users"):
+        if (
+            foreign_key.get("referred_table") == "students"
+            and tuple(foreign_key.get("constrained_columns") or ()) == ("student_id",)
+        ):
+            return
+
+    with database_engine.begin() as connection:
+        orphaned_ids = connection.execute(
+            text(
+                "SELECT users.student_id FROM users "
+                "LEFT JOIN students ON students.student_id = users.student_id "
+                "WHERE users.student_id IS NOT NULL AND students.student_id IS NULL LIMIT 5"
+            )
+        ).scalars().all()
+        if orphaned_ids:
+            raise SchemaUpgradeConflictError(
+                "cannot add fk_users_student_id: users has student_id values without "
+                f"matching students: {orphaned_ids}; no rows were deleted, resolve the "
+                "historical bindings and rerun the upgrade"
+            )
+        connection.execute(
+            text(
+                "ALTER TABLE users ADD CONSTRAINT fk_users_student_id "
+                "FOREIGN KEY (student_id) REFERENCES students (student_id) "
+                "ON DELETE RESTRICT ON UPDATE RESTRICT"
+            )
+        )
+    print("added foreign key fk_users_student_id")
+
+
 def main() -> None:
     if engine is None:
         print("DATABASE_URL is not configured; schema upgrade skipped")
@@ -106,6 +146,7 @@ def main() -> None:
             "must_change_password TINYINT(1) NOT NULL DEFAULT 0",
         )
         _create_unique_index_if_missing("users", "uq_users_student_id", ("student_id",))
+        _create_student_foreign_key_if_missing()
 
     if _column_names("certificates"):
         _add_column_if_missing(

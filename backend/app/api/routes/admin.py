@@ -15,6 +15,7 @@ from app.models.evidence_receipt import EvidenceReceipt
 from app.models.project import Project
 from app.models.revocation_record import RevocationRecord
 from app.models.student import Student
+from app.models.user import User
 from app.services import certificate_service, template_service
 from app.api.routes.auth import require_admin_access
 from app.core.config import settings
@@ -576,6 +577,16 @@ def update_student(student_id: int, payload: StudentPayload,
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="student not found")
+    linked_account = db.query(User).filter(User.student_id == student_id).one_or_none()
+    if (
+        linked_account is not None
+        and payload.student_no is not None
+        and payload.student_no != student.student_no
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="已开通账号的学生不能修改学号；请先停用并重新开通账号",
+        )
     if payload.student_no is not None:
         student.student_no = payload.student_no
     if payload.student_name is not None:
@@ -599,6 +610,8 @@ def delete_student(
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="student not found")
+    if db.query(User).filter(User.student_id == student_id).count():
+        raise HTTPException(status_code=409, detail="该学生已开通登录账号，不能删除")
     certificate_count = db.query(Certificate).filter(Certificate.student_id == student_id).count()
     if certificate_count:
         raise HTTPException(status_code=409, detail="该学生已有证书记录，不能删除")
